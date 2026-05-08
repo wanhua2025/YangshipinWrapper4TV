@@ -10,8 +10,6 @@ import android.graphics.Paint;
 import android.graphics.Path;
 import android.graphics.Rect;
 import android.graphics.drawable.ColorDrawable;
-import android.media.MediaPlayer;
-import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -34,7 +32,6 @@ import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.ListView;
 import android.widget.TextView;
-import android.widget.VideoView;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -57,7 +54,6 @@ public class MainActivity extends Activity {
     private final List<Channel> channels = new ArrayList<Channel>();
 
     private FrameLayout root;
-    private VideoView videoView;
     private WebView bridgeWebView;
     private GestureTraceView gestureTraceView;
     private TextView overlayText;
@@ -114,32 +110,6 @@ public class MainActivity extends Activity {
     private void buildUi() {
         root = new FrameLayout(this);
         root.setBackgroundColor(Color.BLACK);
-
-        videoView = new VideoView(this);
-        videoView.setFocusable(false);
-        videoView.setOnPreparedListener(new MediaPlayer.OnPreparedListener() {
-            @Override
-            public void onPrepared(MediaPlayer mp) {
-                mp.setLooping(false);
-                videoView.start();
-            }
-        });
-        videoView.setOnInfoListener(new MediaPlayer.OnInfoListener() {
-            @Override
-            public boolean onInfo(MediaPlayer mp, int what, int extra) {
-                return false;
-            }
-        });
-        videoView.setOnErrorListener(new MediaPlayer.OnErrorListener() {
-            @Override
-            public boolean onError(MediaPlayer mp, int what, int extra) {
-                showOverlay("Playback failed. Try another channel or quality.", false);
-                return true;
-            }
-        });
-        root.addView(videoView, new FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.MATCH_PARENT));
 
         overlayText = new TextView(this);
         overlayText.setTextColor(Color.WHITE);
@@ -214,14 +184,15 @@ public class MainActivity extends Activity {
 
     @SuppressLint({"SetJavaScriptEnabled", "AddJavascriptInterface"})
     private void setupProtocolBridge() {
-        bridgeWebView = new WebView(getApplicationContext());
+        bridgeWebView = new WebView(this);
         bridgeWebView.setFocusable(false);
-        bridgeWebView.setAlpha(0.01f);
+        bridgeWebView.setBackgroundColor(Color.BLACK);
+        bridgeWebView.setLayerType(View.LAYER_TYPE_HARDWARE, null);
         WebSettings settings = bridgeWebView.getSettings();
         settings.setJavaScriptEnabled(true);
         settings.setDomStorageEnabled(true);
         settings.setDatabaseEnabled(true);
-        settings.setMediaPlaybackRequiresUserGesture(true);
+        settings.setMediaPlaybackRequiresUserGesture(false);
         settings.setLoadsImagesAutomatically(false);
         settings.setBlockNetworkImage(true);
         settings.setUserAgentString("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36");
@@ -233,8 +204,10 @@ public class MainActivity extends Activity {
             }
         });
         bridgeWebView.addJavascriptInterface(new BridgeCallbacks(), "YspAndroid");
-        FrameLayout.LayoutParams bridgeParams = new FrameLayout.LayoutParams(dp(1), dp(1), Gravity.RIGHT | Gravity.BOTTOM);
-        root.addView(bridgeWebView, bridgeParams);
+        FrameLayout.LayoutParams bridgeParams = new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT);
+        root.addView(bridgeWebView, 0, bridgeParams);
         bridgeWebView.loadUrl(YSP_HOME_URL);
     }
 
@@ -248,7 +221,7 @@ public class MainActivity extends Activity {
     }
 
     private void injectBridge() {
-        if (channelsLoaded || bridgeWebView == null) {
+        if (bridgeWebView == null) {
             return;
         }
         bridgeAttempts++;
@@ -339,7 +312,7 @@ public class MainActivity extends Activity {
         Log.i(TAG, "stream_request id=" + requestId + " index=" + currentIndex
                 + " name=" + channel.name + " pid=" + channel.pid
                 + " streamId=" + channel.streamId + " quality=" + preferredQuality);
-        String js = "window.YspTvBridge && window.YspTvBridge.getStream("
+        String js = "window.YspTvBridge && window.YspTvBridge.playChannel("
                 + quoteJs(requestId) + ","
                 + quoteJs(channel.pid) + ","
                 + quoteJs(channel.streamId) + ","
@@ -347,36 +320,26 @@ public class MainActivity extends Activity {
         bridgeWebView.evaluateJavascript(js, null);
     }
 
-    private void onStreamResult(String requestId, String json) {
+    private void onPlaybackResult(String requestId, String json) {
         if (!activeRequestId.equals(requestId)) {
             return;
         }
         try {
             JSONObject object = new JSONObject(json);
             if (!object.optBoolean("ok", false)) {
-                Log.w(TAG, "stream_result id=" + requestId + " ok=false error=" + object.optString("error"));
-                showOverlay("Stream request failed: " + object.optString("error"), false);
+                Log.w(TAG, "web_playback id=" + requestId + " ok=false error=" + object.optString("error"));
+                showOverlay("Playback failed: " + object.optString("error"), false);
                 return;
             }
-            String url = object.optString("url");
-            String actualQuality = object.optString("defn", preferredQuality);
-            if (url.length() == 0) {
-                Log.w(TAG, "stream_result id=" + requestId + " ok=false error=empty_url");
-                showOverlay("Yangshipin returned an empty stream URL.", false);
-                return;
-            }
+            String actualQuality = object.optString("quality", preferredQuality);
             if (qualityIndex(actualQuality) >= 0) {
                 preferredQuality = actualQuality;
                 preferences.edit().putString(PREF_QUALITY, preferredQuality).apply();
             }
             updateStatus();
-            Log.i(TAG, "stream_result id=" + requestId + " ok=true quality=" + preferredQuality
-                    + " url=" + url);
-            videoView.stopPlayback();
-            videoView.setVideoURI(Uri.parse(url));
-            videoView.start();
+            Log.i(TAG, "web_playback id=" + requestId + " ok=true quality=" + preferredQuality);
         } catch (Exception e) {
-            showOverlay("Failed to parse stream result: " + e.getMessage(), false);
+            showOverlay("Failed to parse playback result: " + e.getMessage(), false);
         }
     }
 
@@ -679,9 +642,6 @@ public class MainActivity extends Activity {
     @Override
     protected void onDestroy() {
         handler.removeCallbacksAndMessages(null);
-        if (videoView != null) {
-            videoView.stopPlayback();
-        }
         if (bridgeWebView != null) {
             bridgeWebView.stopLoading();
             bridgeWebView.loadUrl("about:blank");
@@ -705,16 +665,6 @@ public class MainActivity extends Activity {
         }
 
         @JavascriptInterface
-        public void onStream(final String requestId, final String json) {
-            handler.post(new Runnable() {
-                @Override
-                public void run() {
-                    onStreamResult(requestId, json);
-                }
-            });
-        }
-
-        @JavascriptInterface
         public void onError(final String scope, final String message) {
             handler.post(new Runnable() {
                 @Override
@@ -724,6 +674,17 @@ public class MainActivity extends Activity {
                     }
                     Log.w(TAG, "protocol_error scope=" + scope + " message=" + message);
                     showOverlay("Protocol error (" + scope + "): " + message, false);
+                }
+            });
+        }
+
+        @JavascriptInterface
+        public void onPlayback(final String requestId, final String json) {
+            handler.post(new Runnable() {
+                @Override
+                public void run() {
+                    Log.i(TAG, "web_playback id=" + requestId + " result=" + json);
+                    onPlaybackResult(requestId, json);
                 }
             });
         }
