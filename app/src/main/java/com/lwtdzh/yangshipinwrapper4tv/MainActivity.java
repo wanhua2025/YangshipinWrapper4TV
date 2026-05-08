@@ -1,0 +1,887 @@
+package com.lwtdzh.yangshipinwrapper4tv;
+
+import android.annotation.SuppressLint;
+import android.app.Activity;
+import android.content.Context;
+import android.content.SharedPreferences;
+import android.graphics.Canvas;
+import android.graphics.Color;
+import android.graphics.Paint;
+import android.graphics.Path;
+import android.graphics.Rect;
+import android.graphics.drawable.ColorDrawable;
+import android.media.MediaPlayer;
+import android.net.Uri;
+import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
+import android.util.Log;
+import android.view.Gravity;
+import android.view.KeyEvent;
+import android.view.MotionEvent;
+import android.view.View;
+import android.view.ViewConfiguration;
+import android.view.ViewGroup;
+import android.view.Window;
+import android.view.WindowManager;
+import android.webkit.JavascriptInterface;
+import android.webkit.WebChromeClient;
+import android.webkit.WebSettings;
+import android.webkit.WebView;
+import android.webkit.WebViewClient;
+import android.widget.BaseAdapter;
+import android.widget.FrameLayout;
+import android.widget.LinearLayout;
+import android.widget.ListView;
+import android.widget.TextView;
+import android.widget.VideoView;
+
+import org.json.JSONArray;
+import org.json.JSONObject;
+
+import java.io.ByteArrayOutputStream;
+import java.io.InputStream;
+import java.nio.charset.Charset;
+import java.util.ArrayList;
+import java.util.List;
+
+public class MainActivity extends Activity {
+    private static final String TAG = "YSPTV";
+    private static final String YSP_HOME_URL = "https://www.yangshipin.cn/tv/home";
+    private static final String PREFS = "yangshipin_tv";
+    private static final String PREF_QUALITY = "quality";
+    private static final String PREF_CHANNEL_PID = "channel_pid";
+    private static final String[] QUALITY_ORDER = new String[]{"hd", "shd", "fhd"};
+
+    private final Handler handler = new Handler(Looper.getMainLooper());
+    private final List<Channel> channels = new ArrayList<Channel>();
+
+    private FrameLayout root;
+    private VideoView videoView;
+    private WebView bridgeWebView;
+    private GestureTraceView gestureTraceView;
+    private TextView overlayText;
+    private TextView statusText;
+    private LinearLayout menuPanel;
+    private TextView menuHeader;
+    private ListView channelListView;
+    private ChannelAdapter channelAdapter;
+    private SharedPreferences preferences;
+
+    private String preferredQuality = "fhd";
+    private String activeRequestId = "";
+    private int requestCounter = 0;
+    private int currentIndex = 0;
+    private int menuSelection = 0;
+    private int bridgeAttempts = 0;
+    private boolean channelsLoaded = false;
+    private int touchSlop;
+    private final StringBuilder numberBuffer = new StringBuilder();
+
+    private final Runnable hideOverlayRunnable = new Runnable() {
+        @Override
+        public void run() {
+            overlayText.setVisibility(View.GONE);
+        }
+    };
+
+    private final Runnable numberCommitRunnable = new Runnable() {
+        @Override
+        public void run() {
+            commitNumberInput();
+        }
+    };
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        requestWindowFeature(Window.FEATURE_NO_TITLE);
+        getWindow().setFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN, WindowManager.LayoutParams.FLAG_FULLSCREEN);
+        getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        preferences = getSharedPreferences(PREFS, MODE_PRIVATE);
+        touchSlop = ViewConfiguration.get(this).getScaledTouchSlop();
+        preferredQuality = preferences.getString(PREF_QUALITY, "fhd");
+        if (qualityIndex(preferredQuality) < 0) {
+            preferredQuality = "fhd";
+        }
+
+        buildUi();
+        setupProtocolBridge();
+        showOverlay("Loading Yangshipin...", false);
+        updateStatus();
+    }
+
+    private void buildUi() {
+        root = new FrameLayout(this);
+        root.setBackgroundColor(Color.BLACK);
+
+        videoView = new VideoView(this);
+        videoView.setFocusable(false);
+        videoView.setOnPreparedListener(new MediaPlayer.OnPreparedListener() {
+            @Override
+            public void onPrepared(MediaPlayer mp) {
+                mp.setLooping(false);
+                videoView.start();
+            }
+        });
+        videoView.setOnInfoListener(new MediaPlayer.OnInfoListener() {
+            @Override
+            public boolean onInfo(MediaPlayer mp, int what, int extra) {
+                return false;
+            }
+        });
+        videoView.setOnErrorListener(new MediaPlayer.OnErrorListener() {
+            @Override
+            public boolean onError(MediaPlayer mp, int what, int extra) {
+                showOverlay("Playback failed. Try another channel or quality.", false);
+                return true;
+            }
+        });
+        root.addView(videoView, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT));
+
+        overlayText = new TextView(this);
+        overlayText.setTextColor(Color.WHITE);
+        overlayText.setTextSize(44);
+        overlayText.setGravity(Gravity.CENTER);
+        overlayText.setBackgroundColor(0x99000000);
+        overlayText.setPadding(dp(32), dp(20), dp(32), dp(20));
+        overlayText.setVisibility(View.GONE);
+        FrameLayout.LayoutParams overlayParams = new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                Gravity.CENTER);
+        root.addView(overlayText, overlayParams);
+
+        statusText = new TextView(this);
+        statusText.setTextColor(Color.WHITE);
+        statusText.setTextSize(20);
+        statusText.setGravity(Gravity.CENTER);
+        statusText.setBackgroundColor(0x77000000);
+        statusText.setPadding(dp(14), dp(8), dp(14), dp(8));
+        FrameLayout.LayoutParams statusParams = new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                Gravity.TOP | Gravity.RIGHT);
+        statusParams.setMargins(0, dp(20), dp(24), 0);
+        root.addView(statusText, statusParams);
+
+        buildMenu();
+        gestureTraceView = new GestureTraceView(this);
+        root.addView(gestureTraceView, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT));
+        setContentView(root);
+        hideSystemUi();
+    }
+
+    private void buildMenu() {
+        menuPanel = new LinearLayout(this);
+        menuPanel.setOrientation(LinearLayout.VERTICAL);
+        menuPanel.setBackgroundColor(0xE6101010);
+        menuPanel.setPadding(dp(16), dp(18), dp(16), dp(18));
+        menuPanel.setVisibility(View.GONE);
+
+        menuHeader = new TextView(this);
+        menuHeader.setTextColor(Color.WHITE);
+        menuHeader.setTextSize(22);
+        menuHeader.setText("Channels");
+        menuHeader.setGravity(Gravity.CENTER_VERTICAL);
+        menuPanel.addView(menuHeader, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                dp(48)));
+
+        channelListView = new ListView(this);
+        channelListView.setDivider(new ColorDrawable(0x33FFFFFF));
+        channelListView.setDividerHeight(1);
+        channelListView.setCacheColorHint(Color.TRANSPARENT);
+        channelListView.setSelector(new ColorDrawable(Color.TRANSPARENT));
+        channelAdapter = new ChannelAdapter(this);
+        channelListView.setAdapter(channelAdapter);
+        menuPanel.addView(channelListView, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                0,
+                1));
+
+        int menuWidth = Math.min(dp(470), (int) (getResources().getDisplayMetrics().widthPixels * 0.86f));
+        FrameLayout.LayoutParams menuParams = new FrameLayout.LayoutParams(
+                menuWidth,
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                Gravity.LEFT);
+        root.addView(menuPanel, menuParams);
+    }
+
+    @SuppressLint({"SetJavaScriptEnabled", "AddJavascriptInterface"})
+    private void setupProtocolBridge() {
+        bridgeWebView = new WebView(getApplicationContext());
+        bridgeWebView.setFocusable(false);
+        bridgeWebView.setAlpha(0.01f);
+        WebSettings settings = bridgeWebView.getSettings();
+        settings.setJavaScriptEnabled(true);
+        settings.setDomStorageEnabled(true);
+        settings.setDatabaseEnabled(true);
+        settings.setMediaPlaybackRequiresUserGesture(true);
+        settings.setLoadsImagesAutomatically(false);
+        settings.setBlockNetworkImage(true);
+        settings.setUserAgentString("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36");
+        bridgeWebView.setWebChromeClient(new WebChromeClient());
+        bridgeWebView.setWebViewClient(new WebViewClient() {
+            @Override
+            public void onPageFinished(WebView view, String url) {
+                scheduleBridgeInjection(2500);
+            }
+        });
+        bridgeWebView.addJavascriptInterface(new BridgeCallbacks(), "YspAndroid");
+        FrameLayout.LayoutParams bridgeParams = new FrameLayout.LayoutParams(dp(1), dp(1), Gravity.RIGHT | Gravity.BOTTOM);
+        root.addView(bridgeWebView, bridgeParams);
+        bridgeWebView.loadUrl(YSP_HOME_URL);
+    }
+
+    private void scheduleBridgeInjection(long delayMs) {
+        handler.postDelayed(new Runnable() {
+            @Override
+            public void run() {
+                injectBridge();
+            }
+        }, delayMs);
+    }
+
+    private void injectBridge() {
+        if (channelsLoaded || bridgeWebView == null) {
+            return;
+        }
+        bridgeAttempts++;
+        try {
+            bridgeWebView.evaluateJavascript(loadAsset("ysp_bridge.js"), null);
+        } catch (Exception e) {
+            showOverlay("Protocol bridge failed: " + e.getMessage(), false);
+        }
+        if (!channelsLoaded && bridgeAttempts < 12) {
+            scheduleBridgeInjection(2500);
+        }
+    }
+
+    private String loadAsset(String name) throws Exception {
+        InputStream input = getAssets().open(name);
+        try {
+            ByteArrayOutputStream output = new ByteArrayOutputStream();
+            byte[] buffer = new byte[4096];
+            int read;
+            while ((read = input.read(buffer)) != -1) {
+                output.write(buffer, 0, read);
+            }
+            return new String(output.toByteArray(), Charset.forName("UTF-8"));
+        } finally {
+            input.close();
+        }
+    }
+
+    private void onChannelsLoaded(String json) {
+        if (channelsLoaded) {
+            return;
+        }
+        try {
+            JSONArray array = new JSONArray(json);
+            channels.clear();
+            for (int i = 0; i < array.length(); i++) {
+                JSONObject object = array.getJSONObject(i);
+                channels.add(new Channel(
+                        object.optString("name"),
+                        object.optString("pid"),
+                        object.optString("streamId"),
+                        object.optString("type"),
+                        object.optBoolean("is4K", false)));
+            }
+            if (channels.isEmpty()) {
+                Log.w(TAG, "channels_loaded count=0");
+                showOverlay("No free Yangshipin channels found.", false);
+                return;
+            }
+            channelsLoaded = true;
+            Log.i(TAG, "channels_loaded count=" + channels.size());
+            String savedPid = preferences.getString(PREF_CHANNEL_PID, "");
+            currentIndex = findChannelIndexByPid(savedPid);
+            if (currentIndex < 0) {
+                currentIndex = 0;
+            }
+            menuSelection = currentIndex;
+            channelAdapter.notifyDataSetChanged();
+            updateMenuHeader();
+            requestCurrentStream();
+        } catch (Exception e) {
+            showOverlay("Failed to parse channel list: " + e.getMessage(), false);
+        }
+    }
+
+    private int findChannelIndexByPid(String pid) {
+        if (pid == null || pid.length() == 0) {
+            return -1;
+        }
+        for (int i = 0; i < channels.size(); i++) {
+            if (pid.equals(channels.get(i).pid)) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    private void requestCurrentStream() {
+        if (channels.isEmpty() || bridgeWebView == null) {
+            return;
+        }
+        Channel channel = channels.get(currentIndex);
+        preferences.edit().putString(PREF_CHANNEL_PID, channel.pid).apply();
+        showOverlay(channel.name, true);
+        updateStatus();
+        String requestId = String.valueOf(++requestCounter);
+        activeRequestId = requestId;
+        Log.i(TAG, "stream_request id=" + requestId + " index=" + currentIndex
+                + " name=" + channel.name + " pid=" + channel.pid
+                + " streamId=" + channel.streamId + " quality=" + preferredQuality);
+        String js = "window.YspTvBridge && window.YspTvBridge.getStream("
+                + quoteJs(requestId) + ","
+                + quoteJs(channel.pid) + ","
+                + quoteJs(channel.streamId) + ","
+                + quoteJs(preferredQuality) + ");";
+        bridgeWebView.evaluateJavascript(js, null);
+    }
+
+    private void onStreamResult(String requestId, String json) {
+        if (!activeRequestId.equals(requestId)) {
+            return;
+        }
+        try {
+            JSONObject object = new JSONObject(json);
+            if (!object.optBoolean("ok", false)) {
+                Log.w(TAG, "stream_result id=" + requestId + " ok=false error=" + object.optString("error"));
+                showOverlay("Stream request failed: " + object.optString("error"), false);
+                return;
+            }
+            String url = object.optString("url");
+            String actualQuality = object.optString("defn", preferredQuality);
+            if (url.length() == 0) {
+                Log.w(TAG, "stream_result id=" + requestId + " ok=false error=empty_url");
+                showOverlay("Yangshipin returned an empty stream URL.", false);
+                return;
+            }
+            if (qualityIndex(actualQuality) >= 0) {
+                preferredQuality = actualQuality;
+                preferences.edit().putString(PREF_QUALITY, preferredQuality).apply();
+            }
+            updateStatus();
+            Log.i(TAG, "stream_result id=" + requestId + " ok=true quality=" + preferredQuality
+                    + " url=" + url);
+            videoView.stopPlayback();
+            videoView.setVideoURI(Uri.parse(url));
+            videoView.start();
+        } catch (Exception e) {
+            showOverlay("Failed to parse stream result: " + e.getMessage(), false);
+        }
+    }
+
+    private String quoteJs(String value) {
+        if (value == null) {
+            return "\"\"";
+        }
+        return "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"") + "\"";
+    }
+
+    private void changeChannel(int delta) {
+        if (channels.isEmpty()) {
+            return;
+        }
+        currentIndex = (currentIndex + delta + channels.size()) % channels.size();
+        Log.i(TAG, "channel_change index=" + currentIndex + " name=" + channels.get(currentIndex).name);
+        menuSelection = currentIndex;
+        channelAdapter.notifyDataSetChanged();
+        requestCurrentStream();
+    }
+
+    private void changeQuality(int delta) {
+        int index = qualityIndex(preferredQuality);
+        if (index < 0) {
+            index = qualityIndex("fhd");
+        }
+        index = (index + delta + QUALITY_ORDER.length) % QUALITY_ORDER.length;
+        preferredQuality = QUALITY_ORDER[index];
+        Log.i(TAG, "quality_change quality=" + preferredQuality);
+        preferences.edit().putString(PREF_QUALITY, preferredQuality).apply();
+        showOverlay("Quality: " + qualityLabel(preferredQuality), true);
+        requestCurrentStream();
+    }
+
+    private int qualityIndex(String quality) {
+        for (int i = 0; i < QUALITY_ORDER.length; i++) {
+            if (QUALITY_ORDER[i].equals(quality)) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    private String qualityLabel(String quality) {
+        if ("hd".equals(quality)) {
+            return "540P HD";
+        }
+        if ("shd".equals(quality)) {
+            return "720P SHD";
+        }
+        return "1080P Blu-ray";
+    }
+
+    private void updateStatus() {
+        String channelName = channels.isEmpty() ? "" : channels.get(currentIndex).name;
+        statusText.setText(qualityLabel(preferredQuality) + (channelName.length() > 0 ? "  " + channelName : ""));
+    }
+
+    private void showOverlay(String text, boolean autoHide) {
+        handler.removeCallbacks(hideOverlayRunnable);
+        overlayText.setText(text);
+        overlayText.setVisibility(View.VISIBLE);
+        if (autoHide) {
+            handler.postDelayed(hideOverlayRunnable, 5000);
+        }
+    }
+
+    private void toggleMenu() {
+        if (menuPanel.getVisibility() == View.VISIBLE) {
+            return;
+        } else {
+            showMenu();
+        }
+    }
+
+    private void showMenu() {
+        if (channels.isEmpty()) {
+            showOverlay("Channel list is still loading.", true);
+            return;
+        }
+        menuSelection = currentIndex;
+        updateMenuHeader();
+        menuPanel.setVisibility(View.VISIBLE);
+        Log.i(TAG, "menu_show");
+        channelAdapter.notifyDataSetChanged();
+        channelListView.setSelection(menuSelection);
+    }
+
+    private void hideMenu() {
+        menuPanel.setVisibility(View.GONE);
+        Log.i(TAG, "menu_hide");
+        hideSystemUi();
+    }
+
+    private void updateMenuHeader() {
+        if (menuHeader != null) {
+            menuHeader.setText("Channels  " + (channels.isEmpty() ? "0" : String.valueOf(channels.size())));
+        }
+    }
+
+    private void moveMenuSelection(int delta) {
+        if (channels.isEmpty()) {
+            return;
+        }
+        menuSelection = (menuSelection + delta + channels.size()) % channels.size();
+        Log.i(TAG, "menu_selection index=" + menuSelection + " name=" + channels.get(menuSelection).name);
+        channelListView.setSelection(menuSelection);
+        channelAdapter.notifyDataSetChanged();
+    }
+
+    private void selectMenuChannel() {
+        if (channels.isEmpty()) {
+            return;
+        }
+        currentIndex = menuSelection;
+        Log.i(TAG, "menu_select index=" + currentIndex + " name=" + channels.get(currentIndex).name);
+        channelAdapter.notifyDataSetChanged();
+        channelListView.setSelection(currentIndex);
+        requestCurrentStream();
+    }
+
+    private void appendNumber(int digit) {
+        handler.removeCallbacks(numberCommitRunnable);
+        if (numberBuffer.length() >= 3) {
+            numberBuffer.setLength(0);
+        }
+        numberBuffer.append(digit);
+        showOverlay("Channel " + numberBuffer.toString(), true);
+        handler.postDelayed(numberCommitRunnable, 1200);
+    }
+
+    private void commitNumberInput() {
+        if (numberBuffer.length() == 0 || channels.isEmpty()) {
+            return;
+        }
+        try {
+            int oneBased = Integer.parseInt(numberBuffer.toString());
+            numberBuffer.setLength(0);
+            if (oneBased >= 1 && oneBased <= channels.size()) {
+                currentIndex = oneBased - 1;
+                menuSelection = currentIndex;
+                Log.i(TAG, "number_select channel=" + oneBased + " index=" + currentIndex
+                        + " name=" + channels.get(currentIndex).name);
+                channelAdapter.notifyDataSetChanged();
+                channelListView.setSelection(currentIndex);
+                requestCurrentStream();
+            } else {
+                showOverlay("Channel " + oneBased + " is out of range.", true);
+            }
+        } catch (NumberFormatException ignored) {
+            numberBuffer.setLength(0);
+        }
+    }
+
+    @Override
+    public boolean dispatchKeyEvent(KeyEvent event) {
+        if (event.getAction() != KeyEvent.ACTION_DOWN) {
+            return true;
+        }
+        int keyCode = event.getKeyCode();
+        Log.i(TAG, "key_down code=" + keyCode);
+        if (keyCode >= KeyEvent.KEYCODE_0 && keyCode <= KeyEvent.KEYCODE_9) {
+            appendNumber(keyCode - KeyEvent.KEYCODE_0);
+            return true;
+        }
+        if (menuPanel.getVisibility() == View.VISIBLE) {
+            if (keyCode == KeyEvent.KEYCODE_DPAD_UP) {
+                moveMenuSelection(-1);
+                return true;
+            }
+            if (keyCode == KeyEvent.KEYCODE_DPAD_DOWN) {
+                moveMenuSelection(1);
+                return true;
+            }
+            if (isOkKey(keyCode)) {
+                selectMenuChannel();
+                return true;
+            }
+            if (keyCode == KeyEvent.KEYCODE_BACK) {
+                hideMenu();
+                return true;
+            }
+            return true;
+        }
+        if (keyCode == KeyEvent.KEYCODE_DPAD_UP) {
+            changeChannel(-1);
+            return true;
+        }
+        if (keyCode == KeyEvent.KEYCODE_DPAD_DOWN) {
+            changeChannel(1);
+            return true;
+        }
+        if (keyCode == KeyEvent.KEYCODE_DPAD_LEFT) {
+            changeQuality(-1);
+            return true;
+        }
+        if (keyCode == KeyEvent.KEYCODE_DPAD_RIGHT) {
+            changeQuality(1);
+            return true;
+        }
+        if (isOkKey(keyCode) || keyCode == KeyEvent.KEYCODE_MENU) {
+            toggleMenu();
+            return true;
+        }
+        if (keyCode == KeyEvent.KEYCODE_BACK) {
+            finish();
+            return true;
+        }
+        return super.dispatchKeyEvent(event);
+    }
+
+    private boolean isOkKey(int keyCode) {
+        return keyCode == KeyEvent.KEYCODE_DPAD_CENTER
+                || keyCode == KeyEvent.KEYCODE_ENTER
+                || keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER;
+    }
+
+    private void handleTouchTap(float x, float y) {
+        if (menuPanel.getVisibility() == View.VISIBLE) {
+            if (isPointInsideMenu(x, y)) {
+                int position = pointToChannelPosition(x, y);
+                if (position >= 0) {
+                    menuSelection = position;
+                    selectMenuChannel();
+                    Log.i(TAG, "touch_menu_select index=" + position + " name=" + channels.get(position).name);
+                }
+            } else {
+                Log.i(TAG, "touch_menu_outside_hide");
+                hideMenu();
+            }
+            return;
+        }
+        Log.i(TAG, "touch_tap_ok");
+        toggleMenu();
+    }
+
+    private void handleTouchSwipe(float dx, float dy, boolean startedInMenu) {
+        if (menuPanel.getVisibility() == View.VISIBLE && startedInMenu) {
+            return;
+        }
+        if (Math.abs(dx) > Math.abs(dy)) {
+            if (dx > 0) {
+                Log.i(TAG, "touch_swipe_right");
+                changeQuality(1);
+            } else {
+                Log.i(TAG, "touch_swipe_left");
+                changeQuality(-1);
+            }
+        } else {
+            if (dy > 0) {
+                Log.i(TAG, "touch_swipe_down");
+                changeChannel(1);
+            } else {
+                Log.i(TAG, "touch_swipe_up");
+                changeChannel(-1);
+            }
+        }
+    }
+
+    private boolean isPointInsideMenu(float x, float y) {
+        return menuPanel.getVisibility() == View.VISIBLE
+                && x >= menuPanel.getLeft()
+                && x <= menuPanel.getRight()
+                && y >= menuPanel.getTop()
+                && y <= menuPanel.getBottom();
+    }
+
+    private int pointToChannelPosition(float x, float y) {
+        Rect rect = getListRectInRoot();
+        if (!rect.contains((int) x, (int) y)) {
+            return -1;
+        }
+        int position = channelListView.pointToPosition(
+                (int) (x - rect.left),
+                (int) (y - rect.top));
+        if (position < 0 || position >= channels.size()) {
+            return -1;
+        }
+        return position;
+    }
+
+    private Rect getListRectInRoot() {
+        int left = menuPanel.getLeft() + channelListView.getLeft();
+        int top = menuPanel.getTop() + channelListView.getTop();
+        return new Rect(left, top, left + channelListView.getWidth(), top + channelListView.getHeight());
+    }
+
+    private void hideSystemUi() {
+        root.setSystemUiVisibility(
+                View.SYSTEM_UI_FLAG_FULLSCREEN
+                        | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                        | View.SYSTEM_UI_FLAG_LAYOUT_STABLE);
+    }
+
+    private int dp(int value) {
+        float density = getResources().getDisplayMetrics().density;
+        return (int) (value * density + 0.5f);
+    }
+
+    @Override
+    protected void onDestroy() {
+        handler.removeCallbacksAndMessages(null);
+        if (videoView != null) {
+            videoView.stopPlayback();
+        }
+        if (bridgeWebView != null) {
+            bridgeWebView.stopLoading();
+            bridgeWebView.loadUrl("about:blank");
+            bridgeWebView.removeJavascriptInterface("YspAndroid");
+            bridgeWebView.destroy();
+            bridgeWebView = null;
+        }
+        Log.i(TAG, "destroy_cleanup_complete");
+        super.onDestroy();
+    }
+
+    private final class BridgeCallbacks {
+        @JavascriptInterface
+        public void onChannels(final String json) {
+            handler.post(new Runnable() {
+                @Override
+                public void run() {
+                    onChannelsLoaded(json);
+                }
+            });
+        }
+
+        @JavascriptInterface
+        public void onStream(final String requestId, final String json) {
+            handler.post(new Runnable() {
+                @Override
+                public void run() {
+                    onStreamResult(requestId, json);
+                }
+            });
+        }
+
+        @JavascriptInterface
+        public void onError(final String scope, final String message) {
+            handler.post(new Runnable() {
+                @Override
+                public void run() {
+                    if ("channels".equals(scope) && !channelsLoaded && bridgeAttempts < 12) {
+                        return;
+                    }
+                    Log.w(TAG, "protocol_error scope=" + scope + " message=" + message);
+                    showOverlay("Protocol error (" + scope + "): " + message, false);
+                }
+            });
+        }
+    }
+
+    private static final class Channel {
+        final String name;
+        final String pid;
+        final String streamId;
+        final String type;
+        final boolean is4K;
+
+        Channel(String name, String pid, String streamId, String type, boolean is4K) {
+            this.name = name;
+            this.pid = pid;
+            this.streamId = streamId;
+            this.type = type;
+            this.is4K = is4K;
+        }
+    }
+
+    private final class ChannelAdapter extends BaseAdapter {
+        private final Context context;
+
+        ChannelAdapter(Context context) {
+            this.context = context;
+        }
+
+        @Override
+        public int getCount() {
+            return channels.size();
+        }
+
+        @Override
+        public Object getItem(int position) {
+            return channels.get(position);
+        }
+
+        @Override
+        public long getItemId(int position) {
+            return position;
+        }
+
+        @Override
+        public View getView(int position, View convertView, ViewGroup parent) {
+            TextView textView;
+            if (convertView instanceof TextView) {
+                textView = (TextView) convertView;
+            } else {
+                textView = new TextView(context);
+                textView.setTextSize(22);
+                textView.setGravity(Gravity.CENTER_VERTICAL);
+                textView.setSingleLine(true);
+                textView.setPadding(dp(18), 0, dp(14), 0);
+                textView.setTextColor(Color.WHITE);
+                textView.setLayoutParams(new ListView.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        dp(54)));
+            }
+            Channel channel = channels.get(position);
+            String typeLabel = "weishi".equals(channel.type) ? "SAT" : "CCTV";
+            textView.setText(String.valueOf(position + 1) + ". " + channel.name + "  " + typeLabel);
+            if (position == menuSelection) {
+                textView.setBackgroundColor(0xFF1D6FFF);
+            } else if (position == currentIndex) {
+                textView.setBackgroundColor(0x66333333);
+            } else {
+                textView.setBackgroundColor(Color.TRANSPARENT);
+            }
+            return textView;
+        }
+    }
+
+    private final class GestureTraceView extends View {
+        private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final Path path = new Path();
+        private float downX;
+        private float downY;
+        private float lastY;
+        private boolean downInMenu;
+        private boolean moved;
+
+        private final Runnable clearPathRunnable = new Runnable() {
+            @Override
+            public void run() {
+                path.reset();
+                invalidate();
+            }
+        };
+
+        GestureTraceView(Context context) {
+            super(context);
+            paint.setColor(0xFF35D7FF);
+            paint.setStyle(Paint.Style.STROKE);
+            paint.setStrokeCap(Paint.Cap.ROUND);
+            paint.setStrokeJoin(Paint.Join.ROUND);
+            paint.setStrokeWidth(dp(4));
+            setWillNotDraw(false);
+            setFocusable(false);
+        }
+
+        @Override
+        protected void onDraw(Canvas canvas) {
+            super.onDraw(canvas);
+            canvas.drawPath(path, paint);
+        }
+
+        @Override
+        public boolean onTouchEvent(MotionEvent event) {
+            float x = event.getX();
+            float y = event.getY();
+            switch (event.getActionMasked()) {
+                case MotionEvent.ACTION_DOWN:
+                    handler.removeCallbacks(clearPathRunnable);
+                    downX = x;
+                    downY = y;
+                    lastY = y;
+                    downInMenu = isPointInsideMenu(x, y);
+                    moved = false;
+                    path.reset();
+                    path.moveTo(x, y);
+                    invalidate();
+                    return true;
+                case MotionEvent.ACTION_MOVE:
+                    path.lineTo(x, y);
+                    float totalDx = x - downX;
+                    float totalDy = y - downY;
+                    if (Math.abs(totalDx) > touchSlop || Math.abs(totalDy) > touchSlop) {
+                        moved = true;
+                    }
+                    if (menuPanel.getVisibility() == View.VISIBLE && downInMenu) {
+                        float stepDy = y - lastY;
+                        if (Math.abs(stepDy) >= 1f) {
+                            channelListView.smoothScrollBy((int) -stepDy, 0);
+                        }
+                    }
+                    lastY = y;
+                    invalidate();
+                    return true;
+                case MotionEvent.ACTION_UP:
+                case MotionEvent.ACTION_CANCEL:
+                    path.lineTo(x, y);
+                    invalidate();
+                    float dx = x - downX;
+                    float dy = y - downY;
+                    boolean isSwipe = moved && Math.max(Math.abs(dx), Math.abs(dy)) >= dp(48);
+                    if (event.getActionMasked() == MotionEvent.ACTION_UP) {
+                        if (isSwipe) {
+                            handleTouchSwipe(dx, dy, downInMenu);
+                        } else {
+                            handleTouchTap(x, y);
+                        }
+                    }
+                    handler.postDelayed(clearPathRunnable, 450);
+                    return true;
+                default:
+                    return true;
+            }
+        }
+    }
+}
