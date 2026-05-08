@@ -1,18 +1,83 @@
 # YangshipinWrapper4TV
 
-Android TV wrapper for the Yangshipin live TV page.
+YangshipinWrapper4TV is an Android TV and mobile wrapper for the free live-TV
+channels exposed by the official Yangshipin/CCTV live page:
 
-## Protocol
+https://www.yangshipin.cn/tv/home
 
-The app does not scrape channel names from rendered HTML tags. It uses the same protocol modules loaded by `https://www.yangshipin.cn/tv/home`:
+The project goal is to provide a native, remote-control-friendly full-screen TV
+experience for free CCTV, CGTN, and local satellite channels without depending
+on the rendered HTML layout of the website. The app targets Android 4.4+
+(`minSdkVersion 19`) so it can run on older TV boxes as well as newer Android TV
+devices and phones.
+
+## What This Project Does
+
+- Loads the official Yangshipin live-TV protocol runtime from the official page.
+- Discovers playable free channels from the protocol data, not from page DOM
+  tags.
+- Requests the signed HLS stream URL for the selected channel and quality.
+- Plays the stream in a native full-screen Android player surface.
+- Provides TV remote controls and mobile touch gestures over the same playback
+  model.
+- Remembers the last selected stream quality.
+
+## Official Source
+
+The original web experience is the Yangshipin/CCTV TV live page:
+
+- Official page: `https://www.yangshipin.cn/tv/home`
+- Page title: `央视频 - 有品质的视频社交媒体`
+
+This app is only a wrapper around free live-channel access exposed by that
+official site. It does not ship a private channel database or hard-coded stream
+URLs.
+
+## Principle And Mechanism
+
+The app intentionally avoids scraping rendered HTML tags because class names,
+DOM positions, and component structure can change frequently. Instead, it uses
+the same protocol modules that the official Yangshipin page loads:
 
 - Channel list: `https://capi.yangshipin.cn/api/oms/pc/page/PG00000004?...`
 - Stream auth: `https://player-api.yangshipin.cn/v1/player/auth`
 - Stream URL: `https://player-api.yangshipin.cn/v1/player/get_live_info`
 
-Yangshipin signs `get_live_info` with its JavaScript/WASM runtime (`cKey`, `yspticket`, OpenAPI headers). The app therefore runs a hidden protocol `WebView` to execute the official protocol/signature code and passes only decoded free-channel data plus HLS stream URLs to the native Android TV UI.
+Yangshipin signs `get_live_info` with its JavaScript/WASM runtime (`cKey`,
+`yspticket`, and OpenAPI headers). Reimplementing that signing logic natively
+would be brittle and likely to break when Yangshipin updates its runtime.
 
-Free channels are filtered by `payType=879`, covering CCTV/CGTN and local satellite channels. Paid/VIP channels with `payType=880` are not shown in the TV menu.
+The implementation therefore uses a hidden protocol `WebView`:
+
+1. The hidden `WebView` loads the official Yangshipin TV page.
+2. `app/src/main/assets/ysp_bridge.js` captures the page's webpack module
+   runtime.
+3. The bridge calls the official page module that loads `PG00000004`.
+4. It walks the returned protocol data and extracts channel records from
+   `dataTvChannelList`.
+5. It keeps only free channels with `payType=879`.
+6. When the user selects a channel or quality, the bridge calls the official
+   live-player method that signs and requests `get_live_info`.
+7. The native Android layer receives the resulting HLS URL and plays it in the
+   full-screen player.
+
+This keeps the native UI stable while allowing Yangshipin's own protocol and
+signature code to stay responsible for request details.
+
+Free channels are filtered by `payType=879`, covering CCTV/CGTN and local
+satellite channels. Paid/VIP channels with `payType=880` are not shown in the TV
+menu.
+
+## Project Layout
+
+- `app/src/main/java/com/lwtdzh/yangshipinwrapper4tv/MainActivity.java`: native
+  Android UI, player, TV remote handling, touch gestures, persistence, and
+  cleanup.
+- `app/src/main/assets/ysp_bridge.js`: protocol bridge that runs inside the
+  hidden `WebView`.
+- `scripts/build-debug.sh`: dependency-light debug APK build script using the
+  local Android SDK tools.
+- `TESTING.md`: emulator validation notes and tested behavior.
 
 ## Controls
 
