@@ -96,11 +96,11 @@
         style.id = "ysp-tv-wrapper-style";
         style.textContent = [
           "html,body,#app{margin:0!important;padding:0!important;width:100vw!important;height:100vh!important;overflow:hidden!important;background:#000!important;}",
-          ".tv-home,.tv,.tv-main,.tv-main-con,.tv-main-con-l,.tv-main-con-l-vid{width:100vw!important;height:100vh!important;max-width:none!important;margin:0!important;padding:0!important;background:#000!important;}",
+          ".tv-home,.tv,.tv-main,.tv-main-con,.tv-main-con-l,.tv-main-con-l-vid{position:fixed!important;inset:0!important;width:100vw!important;height:100vh!important;max-width:none!important;max-height:none!important;margin:0!important;padding:0!important;background:#000!important;overflow:hidden!important;}",
           ".tv-main-con-r,.tv-zhan,.header,.footer,.public-com,.activity-com,[class*=Footer],[class*=footer]{display:none!important;}",
-          ".tv-main-con-l{width:100vw!important;max-width:none!important;float:none!important;}",
-          ".tv-main-con-l-vid>div,.tv-main-con-l-vid .img,.tv-main-con-l-vid video{width:100vw!important;height:100vh!important;object-fit:contain!important;background:#000!important;}",
-          "video{width:100vw!important;height:100vh!important;object-fit:contain!important;background:#000!important;}",
+          ".tv-main-con-l{float:none!important;}",
+          ".tv-main-con-l-vid,.tv-main-con-l-vid *{max-width:none!important;max-height:none!important;}",
+          "video,canvas{position:fixed!important;inset:0!important;width:100vw!important;height:100vh!important;object-fit:cover!important;background:#000!important;}",
           ".control,.controlBar,.control-bar,.poster,.loading,.play-btn{opacity:0!important;pointer-events:none!important;}"
         ].join("\n");
         document.head.appendChild(style);
@@ -111,7 +111,10 @@
         videos[i].setAttribute("webkit-playsinline", "true");
         videos[i].style.width = "100vw";
         videos[i].style.height = "100vh";
-        videos[i].style.objectFit = "contain";
+        videos[i].style.position = "fixed";
+        videos[i].style.left = "0";
+        videos[i].style.top = "0";
+        videos[i].style.objectFit = "cover";
       }
     } catch (ignored2) {
     }
@@ -212,8 +215,33 @@
     }
   }
 
-  function playChannel(requestId, pid, streamId, quality, attempt) {
+  function isSameOfficialChannel(component, channel) {
+    if (!component || !component.tvIndex || !channel) {
+      return false;
+    }
+    return String(component.tvIndex.pid) === String(channel.pid)
+        && String(component.tvIndex.streamId) === String(channel.streamId);
+  }
+
+  function notifyPlayback(requestId, pid, streamId, quality) {
+    try {
+      YspAndroid.onPlayback(String(requestId), JSON.stringify({
+        ok: true,
+        pid: String(pid),
+        streamId: String(streamId),
+        quality: String(quality || "")
+      }));
+    } catch (ignored) {
+    }
+  }
+
+  function playChannel(requestId, pid, streamId, quality, mode, attempt) {
     var requestKey = String(requestId);
+    if (typeof mode === "number") {
+      attempt = mode;
+      mode = "channel";
+    }
+    mode = mode || "channel";
     if (attempt == null) {
       activePlaybackRequestId = requestKey;
       attempt = 0;
@@ -242,35 +270,42 @@
       if (requestKey !== activePlaybackRequestId) {
         return;
       }
+      if (mode === "quality") {
+        applyOfficialQuality(component, quality);
+        setTimeout(function () {
+          if (requestKey !== activePlaybackRequestId) {
+            return;
+          }
+          applyTvLayout();
+          ensureVideoPlaying(component);
+          notifyPlayback(requestId, pid, streamId, quality);
+        }, 700);
+        return;
+      }
       component.selectIndex = match.group;
-      if (!component.tvIndex || String(component.tvIndex.pid) !== String(match.channel.pid)) {
+      if (!isSameOfficialChannel(component, match.channel)) {
         component.changeTV(match.channel);
-      } else {
-        component.setTvConfig(
-          match.channel.pid,
-          match.channel.streamId,
-          match.channel.coverUrl,
-          match.channel.viewRights,
-          match.channel.payType
-        );
       }
       setTimeout(function () {
         if (requestKey !== activePlaybackRequestId) {
           return;
         }
         applyTvLayout();
-        applyOfficialQuality(component, quality);
-        ensureVideoPlaying(component);
-        try {
-          YspAndroid.onPlayback(String(requestId), JSON.stringify({
-            ok: true,
-            pid: String(pid),
-            streamId: String(streamId),
-            quality: String(quality || "")
-          }));
-        } catch (ignored) {
+        if (mode === "initial" && quality && String(quality) !== "fhd") {
+          applyOfficialQuality(component, quality);
+          setTimeout(function () {
+            if (requestKey !== activePlaybackRequestId) {
+              return;
+            }
+            applyTvLayout();
+            ensureVideoPlaying(component);
+            notifyPlayback(requestId, pid, streamId, quality);
+          }, 700);
+          return;
         }
-      }, 1600);
+        ensureVideoPlaying(component);
+        notifyPlayback(requestId, pid, streamId, quality);
+      }, 700);
     } catch (error) {
       try {
         YspAndroid.onPlayback(String(requestId), JSON.stringify({

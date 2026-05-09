@@ -66,3 +66,19 @@ Artifacts are in `build/outputs/patched-webview-test/`.
 - `touch-swipe-right-quality.png`: touch swipe changed quality.
 - `logcat.log`: no fatal exception, ANR, protocol error, or `ok=false`
   playback result was found; seven playback requests reported `ok=true`.
+
+## Fullscreen And Smooth Channel Switch Regression
+
+Artifacts are in `build/outputs/no-bar-smooth-final-test/`.
+
+- `startup-no-bar.png`: app-specific top status/channel bar is gone; only the
+  broadcast video remains.
+- `channel-switch-2s.png` and `channel-switch-7s.png`: remote Down switches to
+  CCTV2 with the required
+  channel-name overlay during loading, then continues as live video without a
+  second quality-triggered reload.
+- `quality-switch.png`: remote Left changes quality through the official player
+  quality path.
+- `logcat.log`: no fatal exception, protocol error, or `ok=false` playback
+  result was found. The channel switch has one decoder release/create cycle;
+  the previous delayed quality re-apply reload was removed.

@@ -125,17 +125,7 @@ public class MainActivity extends Activity {
         root.addView(overlayText, overlayParams);
 
         statusText = new TextView(this);
-        statusText.setTextColor(Color.WHITE);
-        statusText.setTextSize(20);
-        statusText.setGravity(Gravity.CENTER);
-        statusText.setBackgroundColor(0x77000000);
-        statusText.setPadding(dp(14), dp(8), dp(14), dp(8));
-        FrameLayout.LayoutParams statusParams = new FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-                Gravity.TOP | Gravity.RIGHT);
-        statusParams.setMargins(0, dp(20), dp(24), 0);
-        root.addView(statusText, statusParams);
+        statusText.setVisibility(View.GONE);
 
         buildMenu();
         gestureTraceView = new GestureTraceView(this);
@@ -281,7 +271,7 @@ public class MainActivity extends Activity {
             menuSelection = currentIndex;
             channelAdapter.notifyDataSetChanged();
             updateMenuHeader();
-            requestCurrentStream();
+            requestCurrentStream("initial");
         } catch (Exception e) {
             showOverlay("Failed to parse channel list: " + e.getMessage(), false);
         }
@@ -300,6 +290,10 @@ public class MainActivity extends Activity {
     }
 
     private void requestCurrentStream() {
+        requestCurrentStream("channel");
+    }
+
+    private void requestCurrentStream(String reason) {
         if (channels.isEmpty() || bridgeWebView == null) {
             return;
         }
@@ -316,7 +310,8 @@ public class MainActivity extends Activity {
                 + quoteJs(requestId) + ","
                 + quoteJs(channel.pid) + ","
                 + quoteJs(channel.streamId) + ","
-                + quoteJs(preferredQuality) + ");";
+                + quoteJs(preferredQuality) + ","
+                + quoteJs(reason) + ");";
         bridgeWebView.evaluateJavascript(js, null);
     }
 
@@ -358,7 +353,7 @@ public class MainActivity extends Activity {
         Log.i(TAG, "channel_change index=" + currentIndex + " name=" + channels.get(currentIndex).name);
         menuSelection = currentIndex;
         channelAdapter.notifyDataSetChanged();
-        requestCurrentStream();
+        requestCurrentStream("channel");
     }
 
     private void changeQuality(int delta) {
@@ -371,7 +366,7 @@ public class MainActivity extends Activity {
         Log.i(TAG, "quality_change quality=" + preferredQuality);
         preferences.edit().putString(PREF_QUALITY, preferredQuality).apply();
         showOverlay("Quality: " + qualityLabel(preferredQuality), true);
-        requestCurrentStream();
+        requestCurrentStream("quality");
     }
 
     private int qualityIndex(String quality) {
@@ -632,6 +627,14 @@ public class MainActivity extends Activity {
                 View.SYSTEM_UI_FLAG_FULLSCREEN
                         | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
                         | View.SYSTEM_UI_FLAG_LAYOUT_STABLE);
+    }
+
+    @Override
+    public void onWindowFocusChanged(boolean hasFocus) {
+        super.onWindowFocusChanged(hasFocus);
+        if (hasFocus) {
+            hideSystemUi();
+        }
     }
 
     private int dp(int value) {
