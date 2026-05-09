@@ -107,6 +107,8 @@ Touch screens are also supported:
 - A visible gesture trace is drawn while the finger moves.
 - Drag inside the menu: scroll channel list.
 - Tap a channel inside the menu: switch to that channel and keep the menu open.
+- Swipe left inside the channel/settings menu: return to the first-level menu.
+- Swipe right inside the first-level menu: enter the highlighted section.
 - Tap outside the menu: close the menu.
 
 The default quality is `fhd` (`1080P Blu-ray`). The last selected quality,

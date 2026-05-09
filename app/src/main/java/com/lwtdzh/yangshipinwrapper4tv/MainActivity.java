@@ -729,6 +729,9 @@ public class MainActivity extends Activity {
 
     private void handleTouchSwipe(float dx, float dy, boolean startedInMenu) {
         if (menuPanel.getVisibility() == View.VISIBLE && startedInMenu) {
+            if (Math.abs(dx) > Math.abs(dy)) {
+                handleMenuHorizontalSwipe(dx);
+            }
             return;
         }
         if (Math.abs(dx) > Math.abs(dy)) {
@@ -747,6 +750,24 @@ public class MainActivity extends Activity {
                 Log.i(TAG, "touch_swipe_up");
                 changeChannel(-1);
             }
+        }
+    }
+
+    private void handleMenuHorizontalSwipe(float dx) {
+        if (dx < 0) {
+            Log.i(TAG, "touch_menu_swipe_left");
+            if (menuPage == MENU_PAGE_CHANNELS) {
+                showMainMenu(MAIN_MENU_CHANNELS);
+            } else if (menuPage == MENU_PAGE_SETTINGS) {
+                showMainMenu(MAIN_MENU_SETTINGS);
+            }
+            return;
+        }
+        Log.i(TAG, "touch_menu_swipe_right");
+        if (menuPage == MENU_PAGE_MAIN) {
+            enterMainMenuSelection();
+        } else if (menuPage == MENU_PAGE_SETTINGS) {
+            togglePlaybackMode();
         }
     }
 

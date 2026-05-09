@@ -304,7 +304,7 @@
       if (!component || !component.tabA || !component.tabB) {
         if (attempt < 30) {
           setTimeout(function () {
-            playChannel(requestId, pid, streamId, quality, attempt + 1);
+            playChannel(requestId, pid, streamId, quality, mode, attempt + 1);
           }, 500);
           return;
         }
@@ -338,7 +338,7 @@
           return;
         }
         applyTvLayout();
-        if (mode === "initial" && quality && String(quality) !== "fhd") {
+        if (quality && String(quality) !== "fhd") {
           applyOfficialQuality(component, quality);
           setTimeout(function () {
             if (requestKey !== activePlaybackRequestId) {

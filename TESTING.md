@@ -39,6 +39,8 @@ WebView player and keeps the Android TV/mobile controls as native overlays.
 - Tap playback area: opened the channel menu.
 - Tap channel row in the menu: selected `江苏卫视` and kept the menu visible.
 - Drag inside menu: scrolled the channel list.
+- Swipe left inside the channel menu: returned to the first-level menu.
+- Swipe right inside the first-level menu: re-entered the channel list.
 - Tap outside menu: hid the menu.
 - Swipe down/up: changed channels.
 - Swipe right/left: changed stream quality.
@@ -71,6 +73,18 @@ Artifacts are in `build/outputs/`.
   `Decoder Mode  SW`.
 - Logcat confirmed `channels_loaded count=59`, `web_playback ok=true`, no
   `protocol_error`, and quality persistence by relaunching with `quality=shd`.
+
+## Saved Clarity And Touch Menu Regression
+
+Artifacts are in `build/outputs/`.
+
+- Restarted with saved `quality=shd`; startup requested CCTV1 with
+  `quality=shd` and the bridge applied the saved clarity after the official
+  player component became ready.
+- `final-touch-swipe-left-main-menu.png`: mobile-style left swipe inside the
+  channel menu opened the first-level `Settings`/`Channels` menu.
+- `final-touch-swipe-right-channels.png`: mobile-style right swipe inside the
+  first-level menu re-entered the channel list.
 
 ## Latest Patched APK Regression
 
