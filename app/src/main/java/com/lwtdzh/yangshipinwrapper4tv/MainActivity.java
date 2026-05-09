@@ -13,6 +13,9 @@ import android.graphics.drawable.ColorDrawable;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.text.SpannableString;
+import android.text.Spanned;
+import android.text.style.RelativeSizeSpan;
 import android.util.Log;
 import android.view.Gravity;
 import android.view.KeyEvent;
@@ -48,7 +51,17 @@ public class MainActivity extends Activity {
     private static final String PREFS = "yangshipin_tv";
     private static final String PREF_QUALITY = "quality";
     private static final String PREF_CHANNEL_PID = "channel_pid";
+    private static final String PREF_PLAYBACK_MODE = "playback_mode";
+    private static final String PLAYBACK_MODE_HW = "hw";
+    private static final String PLAYBACK_MODE_SW = "sw";
     private static final String[] QUALITY_ORDER = new String[]{"hd", "shd", "fhd"};
+    private static final String PLAYBACK_HELP_TEXT = "按上下键换台，按OK键打开频道列表，按左右切换清晰度";
+    private static final int MENU_PAGE_MAIN = 0;
+    private static final int MENU_PAGE_CHANNELS = 1;
+    private static final int MENU_PAGE_SETTINGS = 2;
+    private static final int MAIN_MENU_SETTINGS = 0;
+    private static final int MAIN_MENU_CHANNELS = 1;
+    private static final String[] MAIN_MENU_ITEMS = new String[]{"Settings", "Channels"};
 
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final List<Channel> channels = new ArrayList<Channel>();
@@ -69,8 +82,12 @@ public class MainActivity extends Activity {
     private int requestCounter = 0;
     private int currentIndex = 0;
     private int menuSelection = 0;
+    private int mainMenuSelection = MAIN_MENU_CHANNELS;
+    private int settingsSelection = 0;
+    private int menuPage = MENU_PAGE_CHANNELS;
     private int bridgeAttempts = 0;
     private boolean channelsLoaded = false;
+    private String playbackMode = PLAYBACK_MODE_HW;
     private int touchSlop;
     private final StringBuilder numberBuffer = new StringBuilder();
 
@@ -100,6 +117,10 @@ public class MainActivity extends Activity {
         if (qualityIndex(preferredQuality) < 0) {
             preferredQuality = "fhd";
         }
+        playbackMode = preferences.getString(PREF_PLAYBACK_MODE, PLAYBACK_MODE_HW);
+        if (!PLAYBACK_MODE_SW.equals(playbackMode)) {
+            playbackMode = PLAYBACK_MODE_HW;
+        }
 
         buildUi();
         setupProtocolBridge();
@@ -117,6 +138,7 @@ public class MainActivity extends Activity {
         overlayText.setGravity(Gravity.CENTER);
         overlayText.setBackgroundColor(0x99000000);
         overlayText.setPadding(dp(32), dp(20), dp(32), dp(20));
+        overlayText.setLineSpacing(dp(8), 1.0f);
         overlayText.setVisibility(View.GONE);
         FrameLayout.LayoutParams overlayParams = new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT,
@@ -178,7 +200,7 @@ public class MainActivity extends Activity {
         bridgeWebView = new WebView(this);
         bridgeWebView.setFocusable(false);
         bridgeWebView.setBackgroundColor(Color.BLACK);
-        bridgeWebView.setLayerType(View.LAYER_TYPE_HARDWARE, null);
+        applyPlaybackModeToWebView();
         WebSettings settings = bridgeWebView.getSettings();
         settings.setJavaScriptEnabled(true);
         settings.setDomStorageEnabled(true);
@@ -200,6 +222,16 @@ public class MainActivity extends Activity {
                 ViewGroup.LayoutParams.MATCH_PARENT);
         root.addView(bridgeWebView, 0, bridgeParams);
         bridgeWebView.loadUrl(YSP_HOME_URL);
+    }
+
+    private void applyPlaybackModeToWebView() {
+        if (bridgeWebView == null) {
+            return;
+        }
+        // Android WebView video is backed by a separate accelerated surface. Forcing
+        // the WebView itself into a software layer leaves the official player with
+        // audio but a black video surface on TV/emulator builds.
+        bridgeWebView.setLayerType(View.LAYER_TYPE_HARDWARE, null);
     }
 
     private void scheduleBridgeInjection(long delayMs) {
@@ -300,7 +332,7 @@ public class MainActivity extends Activity {
         }
         Channel channel = channels.get(currentIndex);
         preferences.edit().putString(PREF_CHANNEL_PID, channel.pid).apply();
-        showOverlay(channel.name, true);
+        showPlaybackOverlay();
         updateStatus();
         String requestId = String.valueOf(++requestCounter);
         activeRequestId = requestId;
@@ -366,7 +398,6 @@ public class MainActivity extends Activity {
         preferredQuality = QUALITY_ORDER[index];
         Log.i(TAG, "quality_change quality=" + preferredQuality);
         preferences.edit().putString(PREF_QUALITY, preferredQuality).apply();
-        showOverlay("Quality: " + qualityLabel(preferredQuality), true);
         requestCurrentStream("quality");
     }
 
@@ -389,12 +420,37 @@ public class MainActivity extends Activity {
         return "1080P Blu-ray";
     }
 
+    private String qualityOverlayLabel(String quality) {
+        if ("hd".equals(quality)) {
+            return "540P";
+        }
+        if ("shd".equals(quality)) {
+            return "720P";
+        }
+        return "1080P";
+    }
+
+    private String playbackModeLabel() {
+        return PLAYBACK_MODE_SW.equals(playbackMode) ? "SW" : "HW";
+    }
+
     private void updateStatus() {
         String channelName = channels.isEmpty() ? "" : channels.get(currentIndex).name;
         statusText.setText(qualityLabel(preferredQuality) + (channelName.length() > 0 ? "  " + channelName : ""));
     }
 
-    private void showOverlay(String text, boolean autoHide) {
+    private void showPlaybackOverlay() {
+        if (channels.isEmpty()) {
+            return;
+        }
+        String title = channels.get(currentIndex).name + "  " + qualityOverlayLabel(preferredQuality);
+        String text = title + "\n" + PLAYBACK_HELP_TEXT;
+        SpannableString overlay = new SpannableString(text);
+        overlay.setSpan(new RelativeSizeSpan(0.45f), title.length() + 1, text.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        showOverlay(overlay, true);
+    }
+
+    private void showOverlay(CharSequence text, boolean autoHide) {
         handler.removeCallbacks(hideOverlayRunnable);
         overlayText.setText(text);
         overlayText.setVisibility(View.VISIBLE);
@@ -416,12 +472,37 @@ public class MainActivity extends Activity {
             showOverlay("Channel list is still loading.", true);
             return;
         }
+        showChannelsMenu();
+    }
+
+    private void showMainMenu(int selectedItem) {
+        menuPage = MENU_PAGE_MAIN;
+        mainMenuSelection = selectedItem;
+        updateMenuHeader();
+        menuPanel.setVisibility(View.VISIBLE);
+        Log.i(TAG, "menu_main selection=" + mainMenuSelection);
+        channelAdapter.notifyDataSetChanged();
+        channelListView.setSelection(mainMenuSelection);
+    }
+
+    private void showChannelsMenu() {
+        menuPage = MENU_PAGE_CHANNELS;
         menuSelection = currentIndex;
         updateMenuHeader();
         menuPanel.setVisibility(View.VISIBLE);
-        Log.i(TAG, "menu_show");
+        Log.i(TAG, "menu_channels");
         channelAdapter.notifyDataSetChanged();
         channelListView.setSelection(menuSelection);
+    }
+
+    private void showSettingsMenu() {
+        menuPage = MENU_PAGE_SETTINGS;
+        settingsSelection = 0;
+        updateMenuHeader();
+        menuPanel.setVisibility(View.VISIBLE);
+        Log.i(TAG, "menu_settings playbackMode=" + playbackMode);
+        channelAdapter.notifyDataSetChanged();
+        channelListView.setSelection(settingsSelection);
     }
 
     private void hideMenu() {
@@ -432,17 +513,52 @@ public class MainActivity extends Activity {
 
     private void updateMenuHeader() {
         if (menuHeader != null) {
-            menuHeader.setText("Channels  " + (channels.isEmpty() ? "0" : String.valueOf(channels.size())));
+            if (menuPage == MENU_PAGE_MAIN) {
+                menuHeader.setText("Menu");
+            } else if (menuPage == MENU_PAGE_SETTINGS) {
+                menuHeader.setText("Settings");
+            } else {
+                menuHeader.setText("Channels  " + (channels.isEmpty() ? "0" : String.valueOf(channels.size())));
+            }
         }
     }
 
     private void moveMenuSelection(int delta) {
+        if (menuPage == MENU_PAGE_MAIN) {
+            mainMenuSelection = (mainMenuSelection + delta + MAIN_MENU_ITEMS.length) % MAIN_MENU_ITEMS.length;
+            Log.i(TAG, "menu_main_selection index=" + mainMenuSelection);
+            channelListView.setSelection(mainMenuSelection);
+            channelAdapter.notifyDataSetChanged();
+            return;
+        }
+        if (menuPage == MENU_PAGE_SETTINGS) {
+            settingsSelection = 0;
+            channelListView.setSelection(settingsSelection);
+            channelAdapter.notifyDataSetChanged();
+            return;
+        }
         if (channels.isEmpty()) {
             return;
         }
         menuSelection = (menuSelection + delta + channels.size()) % channels.size();
         Log.i(TAG, "menu_selection index=" + menuSelection + " name=" + channels.get(menuSelection).name);
         channelListView.setSelection(menuSelection);
+        channelAdapter.notifyDataSetChanged();
+    }
+
+    private void enterMainMenuSelection() {
+        if (mainMenuSelection == MAIN_MENU_SETTINGS) {
+            showSettingsMenu();
+        } else {
+            showChannelsMenu();
+        }
+    }
+
+    private void togglePlaybackMode() {
+        playbackMode = PLAYBACK_MODE_SW.equals(playbackMode) ? PLAYBACK_MODE_HW : PLAYBACK_MODE_SW;
+        preferences.edit().putString(PREF_PLAYBACK_MODE, playbackMode).apply();
+        applyPlaybackModeToWebView();
+        Log.i(TAG, "playback_mode_change mode=" + playbackMode);
         channelAdapter.notifyDataSetChanged();
     }
 
@@ -455,6 +571,25 @@ public class MainActivity extends Activity {
         channelAdapter.notifyDataSetChanged();
         channelListView.setSelection(currentIndex);
         requestCurrentStream();
+    }
+
+    private void selectMenuItemAt(int position) {
+        if (menuPage == MENU_PAGE_MAIN) {
+            if (position >= 0 && position < MAIN_MENU_ITEMS.length) {
+                mainMenuSelection = position;
+                enterMainMenuSelection();
+            }
+            return;
+        }
+        if (menuPage == MENU_PAGE_SETTINGS) {
+            togglePlaybackMode();
+            return;
+        }
+        if (position >= 0 && position < channels.size()) {
+            menuSelection = position;
+            selectMenuChannel();
+            Log.i(TAG, "touch_menu_select index=" + position + " name=" + channels.get(position).name);
+        }
     }
 
     private void appendNumber(int digit) {
@@ -510,8 +645,30 @@ public class MainActivity extends Activity {
                 moveMenuSelection(1);
                 return true;
             }
+            if (keyCode == KeyEvent.KEYCODE_DPAD_LEFT) {
+                if (menuPage == MENU_PAGE_CHANNELS) {
+                    showMainMenu(MAIN_MENU_CHANNELS);
+                } else if (menuPage == MENU_PAGE_SETTINGS) {
+                    showMainMenu(MAIN_MENU_SETTINGS);
+                }
+                return true;
+            }
+            if (keyCode == KeyEvent.KEYCODE_DPAD_RIGHT) {
+                if (menuPage == MENU_PAGE_MAIN) {
+                    enterMainMenuSelection();
+                } else if (menuPage == MENU_PAGE_SETTINGS) {
+                    togglePlaybackMode();
+                }
+                return true;
+            }
             if (isOkKey(keyCode)) {
-                selectMenuChannel();
+                if (menuPage == MENU_PAGE_MAIN) {
+                    enterMainMenuSelection();
+                } else if (menuPage == MENU_PAGE_SETTINGS) {
+                    togglePlaybackMode();
+                } else {
+                    selectMenuChannel();
+                }
                 return true;
             }
             if (keyCode == KeyEvent.KEYCODE_BACK) {
@@ -556,11 +713,9 @@ public class MainActivity extends Activity {
     private void handleTouchTap(float x, float y) {
         if (menuPanel.getVisibility() == View.VISIBLE) {
             if (isPointInsideMenu(x, y)) {
-                int position = pointToChannelPosition(x, y);
+                int position = pointToMenuPosition(x, y);
                 if (position >= 0) {
-                    menuSelection = position;
-                    selectMenuChannel();
-                    Log.i(TAG, "touch_menu_select index=" + position + " name=" + channels.get(position).name);
+                    selectMenuItemAt(position);
                 }
             } else {
                 Log.i(TAG, "touch_menu_outside_hide");
@@ -603,7 +758,7 @@ public class MainActivity extends Activity {
                 && y <= menuPanel.getBottom();
     }
 
-    private int pointToChannelPosition(float x, float y) {
+    private int pointToMenuPosition(float x, float y) {
         Rect rect = getListRectInRoot();
         if (!rect.contains((int) x, (int) y)) {
             return -1;
@@ -611,7 +766,7 @@ public class MainActivity extends Activity {
         int position = channelListView.pointToPosition(
                 (int) (x - rect.left),
                 (int) (y - rect.top));
-        if (position < 0 || position >= channels.size()) {
+        if (position < 0 || position >= channelAdapter.getCount()) {
             return -1;
         }
         return position;
@@ -722,11 +877,23 @@ public class MainActivity extends Activity {
 
         @Override
         public int getCount() {
+            if (menuPage == MENU_PAGE_MAIN) {
+                return MAIN_MENU_ITEMS.length;
+            }
+            if (menuPage == MENU_PAGE_SETTINGS) {
+                return 1;
+            }
             return channels.size();
         }
 
         @Override
         public Object getItem(int position) {
+            if (menuPage == MENU_PAGE_MAIN) {
+                return MAIN_MENU_ITEMS[position];
+            }
+            if (menuPage == MENU_PAGE_SETTINGS) {
+                return playbackMode;
+            }
             return channels.get(position);
         }
 
@@ -751,12 +918,22 @@ public class MainActivity extends Activity {
                         ViewGroup.LayoutParams.MATCH_PARENT,
                         dp(54)));
             }
-            Channel channel = channels.get(position);
-            String typeLabel = "weishi".equals(channel.type) ? "SAT" : "CCTV";
-            textView.setText(String.valueOf(position + 1) + ". " + channel.name + "  " + typeLabel);
-            if (position == menuSelection) {
+            boolean selected;
+            if (menuPage == MENU_PAGE_MAIN) {
+                textView.setText(MAIN_MENU_ITEMS[position]);
+                selected = position == mainMenuSelection;
+            } else if (menuPage == MENU_PAGE_SETTINGS) {
+                textView.setText("Decoder Mode  " + playbackModeLabel());
+                selected = position == settingsSelection;
+            } else {
+                Channel channel = channels.get(position);
+                String typeLabel = "weishi".equals(channel.type) ? "SAT" : "CCTV";
+                textView.setText(String.valueOf(position + 1) + ". " + channel.name + "  " + typeLabel);
+                selected = position == menuSelection;
+            }
+            if (selected) {
                 textView.setBackgroundColor(0xFF1D6FFF);
-            } else if (position == currentIndex) {
+            } else if (menuPage == MENU_PAGE_CHANNELS && position == currentIndex) {
                 textView.setBackgroundColor(0x66333333);
             } else {
                 textView.setBackgroundColor(Color.TRANSPARENT);

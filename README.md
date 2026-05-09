@@ -22,7 +22,7 @@ devices and phones.
   controls layered above it.
 - Provides TV remote controls and mobile touch gestures over the same playback
   model.
-- Remembers the last selected stream quality.
+- Remembers the last selected stream quality, channel, and decoder-mode setting.
 
 ## Official Source
 
@@ -89,10 +89,16 @@ menu.
 
 - Up/Down: previous/next channel.
 - Left/Right: change stream quality.
-- OK/Enter: open the channel menu, or select the highlighted menu item.
+- OK/Enter: open the menu. From playback this enters the channel list directly;
+  from the channel list, use Left to return to the first-level menu.
 - Back: close the menu; from playback, exit the Activity and clean up playback/bridge resources.
 - Menu: open the channel menu.
 - Number keys: jump to a 1-based channel number.
+
+The first-level menu contains `Settings` and `Channels`. `Channels` opens the
+playable channel list. `Settings` contains the decoder-mode switcher, defaulting
+to `HW`; selecting it toggles between `HW` and `SW`. The selected mode is saved
+in `SharedPreferences`.
 
 Touch screens are also supported:
 
@@ -103,7 +109,8 @@ Touch screens are also supported:
 - Tap a channel inside the menu: switch to that channel and keep the menu open.
 - Tap outside the menu: close the menu.
 
-The default quality is `fhd` (`1080P Blu-ray`). The last selected quality is saved in `SharedPreferences`.
+The default quality is `fhd` (`1080P Blu-ray`). The last selected quality,
+channel, and decoder mode are saved in `SharedPreferences`.
 
 ## Build
 

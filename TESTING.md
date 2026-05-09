@@ -24,7 +24,11 @@ WebView player and keeps the Android TV/mobile controls as native overlays.
 
 - `DPAD_DOWN`: changed from `CCTV1` to `CCTV2`.
 - `DPAD_LEFT`: changed quality from `fhd` to `shd`.
-- `DPAD_CENTER`: opened the channel menu.
+- `DPAD_CENTER`: opened the two-level menu directly at the channel list.
+- `DPAD_LEFT` from the channel list: returned to the first-level menu with
+  `Channels` selected.
+- `DPAD_UP` then `DPAD_CENTER` from the first-level menu: opened `Settings`.
+- `DPAD_CENTER` in `Settings`: toggled decoder mode between `HW` and `SW`.
 - `DPAD_DOWN` inside menu: moved highlight cursor.
 - `DPAD_CENTER` inside menu: selected `CCTV4` and kept the menu visible.
 - `BACK` inside menu: hid the menu.
@@ -45,8 +49,28 @@ WebView player and keeps the Android TV/mobile controls as native overlays.
 - Changed quality to `shd`.
 - Force-stopped and relaunched the app.
 - Verified relaunch requested `江苏卫视` with `quality=shd`.
+- Cleared app data and verified the decoder mode defaults to `HW`.
+- Toggled decoder mode to `SW`, force-stopped and relaunched the app, and
+  verified `Settings` still showed `Decoder Mode  SW`.
+- Verified video remained visible after selecting and persisting `SW`.
 - Pressed Back from playback.
 - Verified `destroy_cleanup_complete` in logcat.
+
+## Two-Level Menu And Decoder Mode Regression
+
+Artifacts are in `build/outputs/`.
+
+- `final-settings-default-hw.png`: clean app data, OK opened Channels by
+  default, Left returned to the first-level menu, Settings showed
+  `Decoder Mode  HW`.
+- `final-settings-toggled-sw.png`: selecting the Settings row changed the saved
+  decoder mode to `SW`.
+- `final-sw-persisted-playback-after-overlay.png`: after force-stop/relaunch
+  with `SW` persisted, the player still rendered real video frames.
+- `final-settings-persisted-sw.png`: after relaunch, Settings still showed
+  `Decoder Mode  SW`.
+- Logcat confirmed `channels_loaded count=59`, `web_playback ok=true`, no
+  `protocol_error`, and quality persistence by relaunching with `quality=shd`.
 
 ## Latest Patched APK Regression
 
