@@ -174,6 +174,7 @@ public class MainActivity extends Activity {
 
     @SuppressLint({"SetJavaScriptEnabled", "AddJavascriptInterface"})
     private void setupProtocolBridge() {
+        WebView.setWebContentsDebuggingEnabled(true);
         bridgeWebView = new WebView(this);
         bridgeWebView.setFocusable(false);
         bridgeWebView.setBackgroundColor(Color.BLACK);
@@ -626,6 +627,9 @@ public class MainActivity extends Activity {
         root.setSystemUiVisibility(
                 View.SYSTEM_UI_FLAG_FULLSCREEN
                         | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                        | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                        | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                        | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
                         | View.SYSTEM_UI_FLAG_LAYOUT_STABLE);
     }
 
