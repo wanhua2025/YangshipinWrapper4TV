@@ -1,0 +1,18 @@
+apply plugin: "com.android.application"
+
+android {
+    compileSdkVersion 33
+
+    defaultConfig {
+        applicationId "com.lwtdzh.yangshipinwrapper4tv"
+        minSdkVersion 19
+        targetSdkVersion 33
+        versionCode 1
+        versionName "1.0"
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+}
