@@ -298,7 +298,7 @@ public class MainActivity extends Activity {
         settings.setRenderPriority(WebSettings.RenderPriority.HIGH);
         settings.setBuiltInZoomControls(false);
         settings.setDisplayZoomControls(false);
-        settings.setUserAgentString("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
+        settings.setUserAgentString("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36");
 
         if (lowMemoryDevice) {
             settings.setCacheMode(WebSettings.LOAD_NO_CACHE);
@@ -339,12 +339,13 @@ public class MainActivity extends Activity {
 
     private void applyPlaybackModeToWebView() {
         if (bridgeWebView == null) return;
+        bridgeWebView.setLayerType(View.LAYER_TYPE_HARDWARE, null);
         bridgeWebView.setOverScrollMode(View.OVER_SCROLL_NEVER);
         bridgeWebView.setScrollBarStyle(View.SCROLLBARS_INSIDE_OVERLAY);
         bridgeWebView.setHorizontalScrollBarEnabled(false);
         bridgeWebView.setVerticalScrollBarEnabled(false);
         try { bridgeWebView.getClass().getMethod("setEnableSmoothTransition", boolean.class).invoke(bridgeWebView, false); } catch (Throwable ignored) {}
-        Log.i(TAG, "playback_mode using manifest default hardware acceleration (no explicit setLayerType)");
+        Log.i(TAG, "playback_mode setLayerType(HARDWARE) applied");
     }
 
     private void scheduleBridgeInjection(long delayMs) {
