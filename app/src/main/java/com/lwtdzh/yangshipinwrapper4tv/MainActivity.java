@@ -64,7 +64,7 @@ public class MainActivity extends Activity {
     private static final String[] MAIN_MENU_ITEMS = new String[]{"设置", "频道列表"};
 
     private static final long JS_HEARTBEAT_TIMEOUT_MS = 6000;
-    private static final long FIRST_FRAME_TIMEOUT_MS = 10000;
+    private static final long FIRST_FRAME_TIMEOUT_MS = 15000;
     private static final int MAX_RECOVERY_LEVEL = 4;
 
     private final Handler handler = new Handler(Looper.getMainLooper());
@@ -277,7 +277,8 @@ public class MainActivity extends Activity {
         bridgeWebView = new WebView(this);
         bridgeWebView.setFocusable(false);
         bridgeWebView.setBackgroundColor(Color.BLACK);
-        bridgeWebView.setVisibility(View.INVISIBLE);
+        bridgeWebView.setVisibility(View.VISIBLE);
+        Log.i(TAG, "bridgeWebView created visible=true");
         applyPlaybackModeToWebView();
 
         WebSettings settings = bridgeWebView.getSettings();
@@ -338,27 +339,12 @@ public class MainActivity extends Activity {
 
     private void applyPlaybackModeToWebView() {
         if (bridgeWebView == null) return;
-        if (PLAYBACK_MODE_SW.equals(playbackMode)) {
-            bridgeWebView.setLayerType(View.LAYER_TYPE_NONE, null);
-            bridgeWebView.setOverScrollMode(View.OVER_SCROLL_NEVER);
-            bridgeWebView.setScrollBarStyle(View.SCROLLBARS_INSIDE_OVERLAY);
-            bridgeWebView.setHorizontalScrollBarEnabled(false);
-            bridgeWebView.setVerticalScrollBarEnabled(false);
-            try { bridgeWebView.getClass().getMethod("setEnableSmoothTransition", boolean.class).invoke(bridgeWebView, false); } catch (Throwable ignored) {}
-            Log.i(TAG, "playback_mode layer=NONE+SW (low-gpu compat)");
-        } else if (PLAYBACK_MODE_HW.equals(playbackMode)) {
-            bridgeWebView.setLayerType(View.LAYER_TYPE_HARDWARE, null);
-            bridgeWebView.setOverScrollMode(View.OVER_SCROLL_IF_CONTENT_SCROLLS);
-            Log.i(TAG, "playback_mode layer=HARDWARE (performance)");
-        } else {
-            bridgeWebView.setLayerType(View.LAYER_TYPE_NONE, null);
-            bridgeWebView.setOverScrollMode(View.OVER_SCROLL_NEVER);
-            bridgeWebView.setScrollBarStyle(View.SCROLLBARS_INSIDE_OVERLAY);
-            bridgeWebView.setHorizontalScrollBarEnabled(false);
-            bridgeWebView.setVerticalScrollBarEnabled(false);
-            try { bridgeWebView.getClass().getMethod("setEnableSmoothTransition", boolean.class).invoke(bridgeWebView, false); } catch (Throwable ignored) {}
-            Log.i(TAG, "playback_mode DEFAULT layer=NONE (video safe)");
-        }
+        bridgeWebView.setOverScrollMode(View.OVER_SCROLL_NEVER);
+        bridgeWebView.setScrollBarStyle(View.SCROLLBARS_INSIDE_OVERLAY);
+        bridgeWebView.setHorizontalScrollBarEnabled(false);
+        bridgeWebView.setVerticalScrollBarEnabled(false);
+        try { bridgeWebView.getClass().getMethod("setEnableSmoothTransition", boolean.class).invoke(bridgeWebView, false); } catch (Throwable ignored) {}
+        Log.i(TAG, "playback_mode using manifest default hardware acceleration (no explicit setLayerType)");
     }
 
     private void scheduleBridgeInjection(long delayMs) {
@@ -472,8 +458,9 @@ public class MainActivity extends Activity {
                 showOverlay("播放失败: " + object.optString("error"), false);
                 return;
             }
-            if (bridgeWebView != null && bridgeWebView.getVisibility() != View.VISIBLE) {
+            if (bridgeWebView != null) {
                 bridgeWebView.setVisibility(View.VISIBLE);
+                Log.i(TAG, "bridgeWebView set VISIBLE");
             }
             String actualQuality = object.optString("quality", preferredQuality);
             if (qualityIndex(actualQuality) >= 0) {
@@ -515,6 +502,9 @@ public class MainActivity extends Activity {
                     break;
                 case "heartbeat":
                     lastJsHeartbeatMs = System.currentTimeMillis();
+                    break;
+                case "video_debug":
+                    Log.i(TAG, "video_debug: " + object.toString());
                     break;
             }
         } catch (Exception e) {

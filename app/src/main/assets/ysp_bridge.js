@@ -395,6 +395,23 @@
         ok: true, pid: String(pid), streamId: String(streamId), quality: String(quality || "")
       }));
     } catch (ignored) {}
+    var v = getCurrentVideo();
+    if (v) {
+      try {
+        var cs = window.getComputedStyle(v);
+        var rect = v.getBoundingClientRect();
+        sendEvent("video_debug", {
+          videoWidth: v.videoWidth, videoHeight: v.videoHeight,
+          paused: v.paused, readyState: v.readyState,
+          width: rect.width, height: rect.height,
+          opacity: cs.opacity, visibility: cs.visibility,
+          display: cs.display, position: cs.position,
+          transform: cs.transform, zIndex: cs.zIndex
+        });
+      } catch (e) {}
+    } else {
+      sendEvent("video_debug", { error: "no video element found" });
+    }
     startVideoWatchdog();
   }
 

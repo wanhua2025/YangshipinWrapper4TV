@@ -19,6 +19,7 @@
         android:usesCleartextTraffic="false">
         <activity
             android:name=".MainActivity"
+            android:hardwareAccelerated="true"
             android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenSize|screenLayout|density|uiMode|smallestScreenSize|layoutDirection"
             android:exported="true"
             android:launchMode="singleTask"
