@@ -22,6 +22,11 @@
   var lastPlaybackQuality = "";
   var channelsLoadedReported = false;
   var globalHeartbeatStarted = false;
+  var audioRecoverAttempted = false;
+  var audioLastPlayingAt = 0;
+  var channelChanging = false;
+  var channelChangeStartAt = 0;
+  var lastChangeTVResult = null;
 
   var bridgeAvailable = null;
   function checkBridge() {
@@ -51,8 +56,12 @@
   function sendHeartbeat() {
     var v = getCurrentVideo();
     var hasRealFrame = false;
+    var hasAudio = false;
     if (v && lastCanvasBlackResult && lastCanvasBlackResult.at > (Date.now() - 3000)) {
       hasRealFrame = !lastCanvasBlackResult.isBlack;
+    }
+    if (v && typeof v.muted !== "undefined") {
+      try { hasAudio = !v.muted; } catch (e) { hasAudio = true; }
     }
     sendEvent("heartbeat", {
       hasVideo: !!v,
@@ -62,6 +71,8 @@
       ended: v ? v.ended : false,
       readyState: v ? v.readyState : 0,
       hasRealFrame: hasRealFrame,
+      hasAudio: hasAudio,
+      channelChanging: channelChanging,
       fpsLikely: v && !v.paused && !v.ended && v.videoWidth > 0
     });
   }
@@ -195,6 +206,7 @@
 
   var _tvLayoutScheduled = false;
   var _tvLayoutDone = false;
+  var _videoBeforeChange = null;
 
   function applyTvLayout() {
     if (_tvLayoutScheduled) return;
@@ -303,6 +315,27 @@
     } catch (ignored) {}
   }
 
+  function tryRecoverAudio() {
+    var v = getCurrentVideo();
+    if (!v) return false;
+    try {
+      v.muted = false;
+      if (typeof v.volume !== "undefined" && v.volume < 0.05) v.volume = 1.0;
+      if (typeof v.untiled !== "undefined" && v.untiled) v.play();
+    } catch (e) {}
+    try {
+      var component = findTvComponent();
+      var player = component ? getOfficialPlayer(component) : null;
+      if (player) {
+        if (player.mute !== undefined) {
+          player.mute = false;
+          if (typeof player.$forceUpdate === "function") player.$forceUpdate();
+        }
+      }
+    } catch (e) {}
+    return true;
+  }
+
   function isSameOfficialChannel(component, channel) {
     if (!component || !component.tvIndex || !channel) return false;
     return String(component.tvIndex.pid) === String(channel.pid)
@@ -320,8 +353,12 @@
   function detectRealVideoFrame() {
     var video = getCurrentVideo();
     if (!video || !video.videoWidth || !video.videoHeight) {
-      lastCanvasBlackResult = { isBlack: true, at: Date.now() };
-      return false;
+      lastCanvasBlackResult = { isBlack: false, at: Date.now(), canvasError: true };
+      sendEvent("real_frame", {
+        canvasError: true,
+        note: "canvas_unavailable_assuming_real_frame"
+      });
+      return true;
     }
     if (!video.__ysp_black_detect_canvas) {
       try {
@@ -350,6 +387,7 @@
       lastCanvasBlackResult = { isBlack: isBlack, at: Date.now(), avgNonBlack: avgNonBlack };
       if (!isBlack) {
         videoFirstFrameReported = true;
+        audioRecoverAttempted = false;
         sendEvent("real_frame", {
           nonBlackRatio: avgNonBlack,
           avgColor: [avgR, avgG, avgB]
@@ -357,8 +395,12 @@
       }
       return !isBlack;
     } catch (e) {
-      lastCanvasBlackResult = { isBlack: true, at: Date.now() };
-      return false;
+      lastCanvasBlackResult = { isBlack: false, at: Date.now(), canvasError: true };
+      sendEvent("real_frame", {
+        canvasError: true,
+        note: "canvas_unavailable_assuming_real_frame"
+      });
+      return true;
     }
   }
 
@@ -403,6 +445,7 @@
         sendEvent("video_debug", {
           videoWidth: v.videoWidth, videoHeight: v.videoHeight,
           paused: v.paused, readyState: v.readyState,
+          muted: v.muted,
           width: rect.width, height: rect.height,
           opacity: cs.opacity, visibility: cs.visibility,
           display: cs.display, position: cs.position,
@@ -420,8 +463,9 @@
     startGlobalHeartbeat();
     videoFirstFrameReported = false;
     watchdogStuckCount = 0;
-    videoWatchdogLastTimeUpdate = Date.now();
-    videoWatchdogLastPlaying = Date.now();
+    videoElementFingerprint = "";
+    audioRecoverAttempted = false;
+    audioLastPlayingAt = Date.now();
     var video = getCurrentVideo();
     if (video) {
       attachVideoListeners(video);
@@ -440,6 +484,7 @@
     video.addEventListener("stalled", onVideoStalled);
     video.addEventListener("ended", onVideoEnded);
     video.addEventListener("pause", onVideoPaused);
+    video.addEventListener("volumechange", onVideoVolumeChange);
   }
 
   function stopVideoWatchdog() {
@@ -455,18 +500,22 @@
       video.removeEventListener("stalled", onVideoStalled);
       video.removeEventListener("ended", onVideoEnded);
       video.removeEventListener("pause", onVideoPaused);
+      video.removeEventListener("volumechange", onVideoVolumeChange);
     }
     if (canvasBlackDetectTimer) { clearInterval(canvasBlackDetectTimer); canvasBlackDetectTimer = null; }
   }
 
   function onVideoTimeUpdate() {
     videoWatchdogLastTimeUpdate = Date.now();
+    audioLastPlayingAt = Date.now();
     reportFirstFrame();
   }
 
   function onVideoPlaying() {
     videoWatchdogLastPlaying = Date.now();
     videoWatchdogLastTimeUpdate = Date.now();
+    audioLastPlayingAt = Date.now();
+    tryRecoverAudio();
     reportFirstFrame();
   }
 
@@ -480,6 +529,17 @@
 
   function onVideoEnded() {
     sendEvent("ended", {});
+    var component = findTvComponent();
+    if (component && component.tvIndex) {
+      try {
+        component.changeTV(component.tvIndex);
+        setTimeout(function() { ensureVideoPlaying(component); }, 200);
+      } catch (e) {
+        ensureVideoPlaying(component);
+      }
+    } else {
+      ensureVideoPlaying(null);
+    }
   }
 
   function onVideoPaused() {
@@ -489,7 +549,19 @@
     }
   }
 
+  function onVideoVolumeChange() {
+    audioLastPlayingAt = Date.now();
+    try {
+      var v = getCurrentVideo();
+      if (v && v.muted) { v.muted = false; }
+    } catch (e) {}
+  }
+
   function checkVideoAlive() {
+    if (channelChanging) {
+      return;
+    }
+
     var video = getCurrentVideo();
     if (!video) {
       sendEvent("no_video", {});
@@ -518,14 +590,14 @@
       if (watchdogStuckCount >= 2) {
         watchdogStuckCount = 0;
         sendEvent("black_screen", { reason: "time_frozen_stuck" });
-        hardRefreshVideo();
+        hardRefreshVideo("time_frozen_stuck");
       }
     } else if (!video.paused && !hasVideoFrames && neverPlayed) {
       sendEvent("black_screen", { reason: "no_frames_never_played" });
       ensureVideoPlaying(null);
     } else if (video.ended) {
       sendEvent("black_screen", { reason: "ended" });
-      ensureVideoPlaying(null);
+      onVideoEnded();
     } else if (video.paused && !video.ended && video.readyState >= 2) {
       ensureVideoPlaying(null);
     } else if (actuallyPlaying && hasVideoFrames && detectedBlack && !videoFirstFrameReported) {
@@ -533,10 +605,19 @@
       if (watchdogStuckCount >= 3) {
         watchdogStuckCount = 0;
         sendEvent("black_screen", { reason: "canvas_black_no_first_frame" });
-        hardRefreshVideo();
+        hardRefreshVideo("canvas_black_no_first_frame");
       }
     } else {
       watchdogStuckCount = 0;
+    }
+
+    if (actuallyPlaying && hasVideoFrames && !audioRecoverAttempted) {
+      try {
+        if (video.muted) {
+          tryRecoverAudio();
+          audioRecoverAttempted = true;
+        }
+      } catch (e) {}
     }
   }
 
@@ -555,15 +636,12 @@
     ensureVideoPlaying(null);
   }
 
-  function hardRefreshVideo() {
+  function hardRefreshVideo(reason) {
     applyTvLayout();
     var component = findTvComponent();
-    if (component) {
+    if (component && component.tvIndex) {
       try {
-        if (component.changeTV && component.tvIndex) {
-          var savedIndex = component.tvIndex;
-          component.changeTV(savedIndex);
-        }
+        component.changeTV(component.tvIndex);
       } catch (e) {}
     }
     setTimeout(function () {
@@ -572,46 +650,84 @@
     }, 200);
   }
 
-  function waitForVideoPlaying(requestId, pid, streamId, quality, maxWaitMs) {
+  function waitForVideoPlaying(requestId, pid, streamId, quality, maxWaitMs, oldVideo) {
     maxWaitMs = maxWaitMs || 2500;
     var deadline = Date.now() + maxWaitMs;
     var video = getCurrentVideo();
+    var seenVideoFingerprint = oldVideo ? getVideoFingerprint(oldVideo) : "";
+    var gotNewVideo = oldVideo ? false : true;
 
     function done() { notifyPlayback(requestId, pid, streamId, quality); }
 
-    if (video && !video.paused && video.readyState >= 2) {
+    if (video && !oldVideo && !video.paused && video.readyState >= 2) {
+      done();
+      return;
+    }
+    if (oldVideo && video && video !== oldVideo && !video.paused && video.readyState >= 2) {
       done();
       return;
     }
 
-    function onPlaying() { cleanup(); done(); }
+    function onNewVideoReady() { cleanup(); done(); }
     function onTimeout() { cleanup(); ensureVideoPlaying(null); done(); }
     function cleanup() {
       if (video) {
-        video.removeEventListener("playing", onPlaying);
-        video.removeEventListener("canplay", onPlaying);
-        video.removeEventListener("timeupdate", onPlaying);
+        video.removeEventListener("playing", onNewVideoReady);
+        video.removeEventListener("canplay", onNewVideoReady);
+        video.removeEventListener("timeupdate", onNewVideoReady);
       }
     }
 
-    if (!video) {
-      var timer = setInterval(function () {
-        var v = getCurrentVideo();
-        if (v) { video = v; clearInterval(timer); attachListeners(); }
-        else if (Date.now() >= deadline) { clearInterval(timer); onTimeout(); }
-      }, 40);
-    } else {
-      attachListeners();
-    }
+    var pollTimer = setInterval(function () {
+      var v = getCurrentVideo();
+      if (oldVideo) {
+        if (v && v !== oldVideo) {
+          if (!gotNewVideo) {
+            gotNewVideo = true;
+            if (seenVideoFingerprint) seenVideoFingerprint = "";
+          }
+          if (!v.paused && v.readyState >= 2) {
+            video = v;
+            clearInterval(pollTimer);
+            attachListeners();
+          } else {
+            video = v;
+          }
+        } else if (!v) {
+          if (seenVideoFingerprint) seenVideoFingerprint = "";
+        }
+      } else {
+        if (v && !v.paused && v.readyState >= 2) {
+          video = v;
+          clearInterval(pollTimer);
+          attachListeners();
+        } else if (v && !video) {
+          video = v;
+        }
+      }
+      if (Date.now() >= deadline) {
+        clearInterval(pollTimer);
+        onTimeout();
+      }
+    }, 40);
 
     function attachListeners() {
       if (!video) { onTimeout(); return; }
-      video.addEventListener("playing", onPlaying, { once: true });
-      video.addEventListener("canplay", onPlaying, { once: true });
-      video.addEventListener("timeupdate", onPlaying, { once: true });
+      video.addEventListener("playing", onNewVideoReady, { once: true });
+      video.addEventListener("canplay", onNewVideoReady, { once: true });
+      video.addEventListener("timeupdate", onNewVideoReady, { once: true });
       setTimeout(onTimeout, Math.max(0, deadline - Date.now()));
       if (!video.paused && video.readyState >= 2) { cleanup(); done(); }
     }
+  }
+
+  function getVideoFingerprint(v) {
+    if (!v) return "";
+    try {
+      var rect = v.getBoundingClientRect();
+      return String(v.videoWidth || "") + "x" + String(v.videoHeight || "")
+        + "@" + Math.round(rect.width) + "x" + Math.round(rect.height);
+    } catch (e) { return ""; }
   }
 
   function tryLoadChannelsFromVue() {
@@ -720,6 +836,9 @@
     if (requestKey !== activePlaybackRequestId) return;
 
     try {
+      stopVideoWatchdog();
+      channelChanging = true;
+      channelChangeStartAt = Date.now();
       applyTvLayout();
       startGlobalHeartbeat();
       var component = findTvComponent();
@@ -738,6 +857,7 @@
       videoFirstFrameReported = false;
       watchdogStuckCount = 0;
       videoElementFingerprint = "";
+      audioRecoverAttempted = false;
 
       if (mode === "quality") {
         applyOfficialQuality(component, quality);
@@ -746,6 +866,7 @@
           if (requestKey !== activePlaybackRequestId) return;
           applyTvLayout();
           waitForVideoPlaying(requestId, pid, streamId, quality, 2000);
+          channelChanging = false;
         }, 40);
         return;
       }
@@ -756,17 +877,20 @@
       var qualityNeedChange = quality && String(quality) !== "fhd" && String(quality) !== lastPlaybackQuality;
 
       if (needChange && !qualityNeedChange) {
+        _videoBeforeChange = getCurrentVideo();
         component.changeTV(match.channel);
         lastPlaybackQuality = "fhd";
         setTimeout(function () {
           if (requestKey !== activePlaybackRequestId) return;
           applyTvLayout();
-          waitForVideoPlaying(requestId, pid, streamId, quality, 2500);
-        }, 50);
+          waitForVideoPlaying(requestId, pid, streamId, quality, 3000, _videoBeforeChange);
+          channelChanging = false;
+        }, 80);
         return;
       }
 
       if (needChange && qualityNeedChange) {
+        _videoBeforeChange = getCurrentVideo();
         component.changeTV(match.channel);
         setTimeout(function () {
           if (requestKey !== activePlaybackRequestId) return;
@@ -775,9 +899,10 @@
           setTimeout(function () {
             if (requestKey !== activePlaybackRequestId) return;
             applyTvLayout();
-            waitForVideoPlaying(requestId, pid, streamId, quality, 2500);
-          }, 50);
-        }, 50);
+            waitForVideoPlaying(requestId, pid, streamId, quality, 3000, _videoBeforeChange);
+            channelChanging = false;
+          }, 80);
+        }, 80);
         return;
       }
 
@@ -788,6 +913,7 @@
           if (requestKey !== activePlaybackRequestId) return;
           applyTvLayout();
           waitForVideoPlaying(requestId, pid, streamId, quality, 2000);
+          channelChanging = false;
         }, 40);
         return;
       }
@@ -797,11 +923,13 @@
         setTimeout(function () {
           if (requestKey !== activePlaybackRequestId) return;
           applyTvLayout();
-          waitForVideoPlaying(requestId, pid, streamId, quality, 1500);
-        }, 20);
+          waitForVideoPlaying(requestId, pid, streamId, quality, 2000);
+          channelChanging = false;
+        }, 40);
         return;
       }
     } catch (error) {
+      channelChanging = false;
       try {
         YspAndroid.onPlayback(String(requestId), JSON.stringify({
           ok: false, error: error && (error.message || String(error)) || "playback failed"
@@ -818,7 +946,8 @@
     hardRefreshVideo: hardRefreshVideo,
     forceRepaint: forceVideoRepaint,
     stopWatchdog: stopVideoWatchdog,
-    startWatchdog: startVideoWatchdog
+    startWatchdog: startVideoWatchdog,
+    tryRecoverAudio: tryRecoverAudio
   };
 
   function primeEarly() {

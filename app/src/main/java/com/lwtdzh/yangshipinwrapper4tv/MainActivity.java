@@ -53,22 +53,19 @@ public class MainActivity extends Activity {
     private static final String PREF_CHANNEL_PID = "channel_pid";
     private static final String PREF_PLAYBACK_MODE = "playback_mode";
     private static final String PREF_CHANNELS_JSON = "channels_json";
-    private static final String PREF_AUTO_START = "auto_start";
+    private static final String PREF_AUTO_START = "auto_start_on_boot";
     private static final String PLAYBACK_MODE_DEFAULT = "default";
     private static final String PLAYBACK_MODE_HW = "hw";
     private static final String PLAYBACK_MODE_SW = "sw";
     private static final String[] QUALITY_ORDER = new String[]{"hd", "shd", "fhd"};
     private static final String PLAYBACK_HELP_TEXT = "上下换台 · OK打开频道列表 · 左右切清晰度";
+    private static final String[] SETTINGS_ITEMS = new String[]{"解码模式", "开机自启"};
     private static final int MENU_PAGE_MAIN = 0;
     private static final int MENU_PAGE_CHANNELS = 1;
     private static final int MENU_PAGE_SETTINGS = 2;
     private static final int MAIN_MENU_SETTINGS = 0;
     private static final int MAIN_MENU_CHANNELS = 1;
     private static final String[] MAIN_MENU_ITEMS = new String[]{"设置", "频道列表"};
-
-    private static final int SETTINGS_ITEM_PLAYBACK = 0;
-    private static final int SETTINGS_ITEM_AUTOSTART = 1;
-    private static final int SETTINGS_ITEM_COUNT = 2;
 
     private static final long JS_HEARTBEAT_TIMEOUT_MS = 6000;
     private static final long FIRST_FRAME_TIMEOUT_MS = 15000;
@@ -96,11 +93,11 @@ public class MainActivity extends Activity {
     private int menuSelection = 0;
     private int mainMenuSelection = MAIN_MENU_CHANNELS;
     private int settingsSelection = 0;
-    private int menuPage = MENU_PAGE_MAIN;
+    private int menuPage = MENU_PAGE_CHANNELS;
     private int bridgeAttempts = 0;
     private boolean channelsLoaded = false;
     private String playbackMode = PLAYBACK_MODE_DEFAULT;
-    private boolean autoStart = true;
+    private boolean autoStartOnBoot = true;
     private boolean lowMemoryDevice = false;
     private int touchSlop;
     private final StringBuilder numberBuffer = new StringBuilder();
@@ -199,11 +196,12 @@ public class MainActivity extends Activity {
         if (!PLAYBACK_MODE_SW.equals(playbackMode) && !PLAYBACK_MODE_HW.equals(playbackMode)) {
             playbackMode = PLAYBACK_MODE_DEFAULT;
         }
-        autoStart = preferences.getBoolean(PREF_AUTO_START, true);
         if (lowMemoryDevice) {
             playbackMode = PLAYBACK_MODE_DEFAULT;
             Log.i(TAG, "low_memory_device=true forcing playback_mode=default");
         }
+        autoStartOnBoot = preferences.getBoolean(PREF_AUTO_START, true);
+        Log.i(TAG, "prefs auto_start_on_boot=" + autoStartOnBoot);
 
         buildUi();
         setupProtocolBridge(savedInstanceState);
@@ -290,7 +288,8 @@ public class MainActivity extends Activity {
         bridgeWebView.setFocusable(false);
         bridgeWebView.setBackgroundColor(Color.BLACK);
         bridgeWebView.setVisibility(View.VISIBLE);
-        Log.i(TAG, "bridgeWebView created visible=true");
+        bridgeWebView.setAlpha(1.0f);
+        Log.i(TAG, "bridgeWebView created visible=true alpha=1.0");
         applyPlaybackModeToWebView();
 
         WebSettings settings = bridgeWebView.getSettings();
@@ -434,10 +433,21 @@ public class MainActivity extends Activity {
         return -1;
     }
 
+    private long lastStreamRequestMs = 0;
+    private static final long STREAM_REQUEST_COOLDOWN_MS = 400;
+    private volatile boolean isChannelChanging = false;
+
     private void requestCurrentStream() { requestCurrentStream("channel"); }
 
     private void requestCurrentStream(String reason) {
         if (channels.isEmpty() || bridgeWebView == null) return;
+        long now = System.currentTimeMillis();
+        if (isChannelChanging && (now - lastStreamRequestMs) < STREAM_REQUEST_COOLDOWN_MS) {
+            Log.i(TAG, "stream_request skipped (cooldown) reason=" + reason);
+            return;
+        }
+        lastStreamRequestMs = now;
+        isChannelChanging = true;
         Channel channel = channels.get(currentIndex);
         preferences.edit().putString(PREF_CHANNEL_PID, channel.pid).apply();
         showPlaybackOverlay();
@@ -445,30 +455,56 @@ public class MainActivity extends Activity {
         String requestId = String.valueOf(++requestCounter);
         activeRequestId = requestId;
         playbackTimedOut = false;
+        consecutiveBlackScreens = 0;
+        recoveryLevel = 0;
         handler.removeCallbacks(playbackTimeoutRunnable);
         long timeoutMs = lowMemoryDevice ? 9000 : 6000;
         handler.postDelayed(playbackTimeoutRunnable, timeoutMs);
         Log.i(TAG, "stream_request id=" + requestId + " idx=" + currentIndex
                 + " name=" + channel.name + " pid=" + channel.pid
                 + " streamId=" + channel.streamId + " q=" + preferredQuality
-                + " reason=" + reason);
-        String js = "window.YspTvBridge && window.YspTvBridge.playChannel("
+                + " reason=" + reason + " bridge_ready=" + channelsLoaded);
+        String js = "(function(){"
+                + "if(!window.YspTvBridge||typeof window.YspTvBridge.playChannel!=='function'){"
+                + "  return 'bridge_not_ready';"
+                + "}"
+                + "window.YspTvBridge.playChannel("
                 + quoteJs(requestId) + ","
                 + quoteJs(channel.pid) + ","
                 + quoteJs(channel.streamId) + ","
                 + quoteJs(preferredQuality) + ","
-                + quoteJs(reason) + ");";
-        bridgeWebView.evaluateJavascript(js, null);
+                + quoteJs(reason) + ");"
+                + "return 'ok';"
+                + "})();";
+        bridgeWebView.evaluateJavascript(js, new android.webkit.ValueCallback<String>() {
+            @Override
+            public void onReceiveValue(String value) {
+                if (value != null && value.contains("bridge_not_ready")) {
+                    Log.w(TAG, "bridge not ready, retrying in 500ms...");
+                    handler.removeCallbacks(playbackTimeoutRunnable);
+                    handler.postDelayed(new Runnable() {
+                        @Override public void run() {
+                            injectBridge();
+                            requestCurrentStream(reason + "_retry_bridge");
+                        }
+                    }, 500);
+                }
+            }
+        });
     }
 
     private void onPlaybackResult(String requestId, String json) {
         if (!activeRequestId.equals(requestId)) return;
         handler.removeCallbacks(playbackTimeoutRunnable);
+        isChannelChanging = false;
         try {
             JSONObject object = new JSONObject(json);
             if (!object.optBoolean("ok", false)) {
                 Log.w(TAG, "web_playback id=" + requestId + " ok=false err=" + object.optString("error"));
                 showOverlay("播放失败: " + object.optString("error"), false);
+                handler.postDelayed(new Runnable() {
+                    @Override public void run() { requestCurrentStream("auto_retry_after_fail"); }
+                }, 2000);
                 return;
             }
             String actualQuality = object.optString("quality", preferredQuality);
@@ -498,16 +534,20 @@ public class MainActivity extends Activity {
                     onRealFrame();
                     break;
                 case "black_screen":
+                    if (isChannelChanging) {
+                        Log.i(TAG, "black_screen ignored during channel change reason=" + object.optString("reason"));
+                        break;
+                    }
                     onBlackScreenEvent(object.optString("reason", "unknown"));
                     break;
                 case "stalled":
-                    Log.w(TAG, "js_event stalled");
+                    if (!isChannelChanging) Log.w(TAG, "js_event stalled");
                     break;
                 case "ended":
-                    Log.w(TAG, "js_event ended");
+                    if (!isChannelChanging) Log.w(TAG, "js_event ended");
                     break;
                 case "no_video":
-                    Log.w(TAG, "js_event no_video");
+                    if (!isChannelChanging) Log.w(TAG, "js_event no_video");
                     break;
                 case "heartbeat":
                     lastJsHeartbeatMs = System.currentTimeMillis();
@@ -522,33 +562,23 @@ public class MainActivity extends Activity {
     }
 
     private void showBridgeWebView() {
-        if (bridgeWebView != null && bridgeWebView.getVisibility() != View.VISIBLE) {
+        if (bridgeWebView != null && bridgeWebView.getAlpha() < 1.0f) {
+            bridgeWebView.setAlpha(1.0f);
             bridgeWebView.setVisibility(View.VISIBLE);
-            Log.i(TAG, "bridgeWebView set VISIBLE (real frame arrived)");
+            Log.i(TAG, "bridgeWebView setAlpha=1.0 (real frame arrived)");
         }
     }
 
     private void onFirstFrame(boolean realFrame, String note) {
         firstFrameReceived = true;
         if (realFrame) realFrameReceived = true;
-        if (realFrame) showBridgeWebView();
+        showBridgeWebView();
         if (overlayWaitingFirstFrame) {
-            if (realFrame) {
-                overlayWaitingFirstFrame = false;
-                handler.removeCallbacks(firstFrameTimeoutRunnable);
-                handler.removeCallbacks(hideOverlayRunnable);
-                handler.postDelayed(hideOverlayRunnable, OVERLAY_HIDE_AFTER_FIRST_FRAME_MS);
-                Log.i(TAG, "overlay_hide scheduled REAL first_frame +" + OVERLAY_HIDE_AFTER_FIRST_FRAME_MS + "ms");
-            } else if (!note.contains("pending_real")) {
-                showBridgeWebView();
-                overlayWaitingFirstFrame = false;
-                handler.removeCallbacks(firstFrameTimeoutRunnable);
-                handler.removeCallbacks(hideOverlayRunnable);
-                handler.postDelayed(hideOverlayRunnable, OVERLAY_HIDE_AFTER_FIRST_FRAME_MS);
-                Log.i(TAG, "overlay_hide scheduled tentative first_frame +" + OVERLAY_HIDE_AFTER_FIRST_FRAME_MS + "ms");
-            } else {
-                Log.i(TAG, "first_frame tentative, waiting for real frame");
-            }
+            overlayWaitingFirstFrame = false;
+            handler.removeCallbacks(firstFrameTimeoutRunnable);
+            handler.removeCallbacks(hideOverlayRunnable);
+            handler.postDelayed(hideOverlayRunnable, OVERLAY_HIDE_AFTER_FIRST_FRAME_MS);
+            Log.i(TAG, "overlay_hide scheduled first_frame real=" + realFrame + " +" + OVERLAY_HIDE_AFTER_FIRST_FRAME_MS + "ms");
         }
     }
 
@@ -719,7 +749,9 @@ public class MainActivity extends Activity {
         handler.removeCallbacks(hideOverlayRunnable);
         handler.removeCallbacks(firstFrameTimeoutRunnable);
         if (bridgeWebView != null) {
-            bridgeWebView.setVisibility(View.INVISIBLE);
+            bridgeWebView.setAlpha(0f);
+            bridgeWebView.setVisibility(View.VISIBLE);
+            Log.i(TAG, "showPlaybackOverlay: bridgeWebView alpha=0 overlay VISIBLE channel=" + channels.get(currentIndex).name);
         }
         overlayText.setText(overlay);
         overlayText.setVisibility(View.VISIBLE);
@@ -745,7 +777,7 @@ public class MainActivity extends Activity {
             showOverlay("频道列表仍在加载中", true);
             return;
         }
-        showMainMenu(MAIN_MENU_CHANNELS);
+        showChannelsMenu();
     }
 
     private void showMainMenu(int selectedItem) {
@@ -800,7 +832,7 @@ public class MainActivity extends Activity {
             return;
         }
         if (menuPage == MENU_PAGE_SETTINGS) {
-            settingsSelection = (settingsSelection + delta + SETTINGS_ITEM_COUNT) % SETTINGS_ITEM_COUNT;
+            settingsSelection = (settingsSelection + delta + SETTINGS_ITEMS.length) % SETTINGS_ITEMS.length;
             Log.i(TAG, "menu_move_settings idx=" + settingsSelection);
             channelListView.setSelection(settingsSelection);
             channelAdapter.notifyDataSetChanged();
@@ -829,9 +861,9 @@ public class MainActivity extends Activity {
     }
 
     private void toggleAutoStart() {
-        autoStart = !autoStart;
-        preferences.edit().putBoolean(PREF_AUTO_START, autoStart).apply();
-        Log.i(TAG, "auto_start=" + autoStart);
+        autoStartOnBoot = !autoStartOnBoot;
+        preferences.edit().putBoolean(PREF_AUTO_START, autoStartOnBoot).apply();
+        Log.i(TAG, "auto_start_toggle enabled=" + autoStartOnBoot);
         channelAdapter.notifyDataSetChanged();
     }
 
@@ -854,11 +886,8 @@ public class MainActivity extends Activity {
             return;
         }
         if (menuPage == MENU_PAGE_SETTINGS) {
-            if (settingsSelection == SETTINGS_ITEM_PLAYBACK) {
-                cyclePlaybackMode();
-            } else if (settingsSelection == SETTINGS_ITEM_AUTOSTART) {
-                toggleAutoStart();
-            }
+            if (position == 0) cyclePlaybackMode();
+            else if (position == 1) toggleAutoStart();
             return;
         }
         if (position >= 0 && position < channels.size()) {
@@ -1155,13 +1184,13 @@ public class MainActivity extends Activity {
 
         @Override public int getCount() {
             if (menuPage == MENU_PAGE_MAIN) return MAIN_MENU_ITEMS.length;
-            if (menuPage == MENU_PAGE_SETTINGS) return SETTINGS_ITEM_COUNT;
+            if (menuPage == MENU_PAGE_SETTINGS) return SETTINGS_ITEMS.length;
             return channels.size();
         }
 
         @Override public Object getItem(int position) {
             if (menuPage == MENU_PAGE_MAIN) return MAIN_MENU_ITEMS[position];
-            if (menuPage == MENU_PAGE_SETTINGS) return position;
+            if (menuPage == MENU_PAGE_SETTINGS) return SETTINGS_ITEMS[position];
             return channels.get(position);
         }
 
@@ -1187,11 +1216,9 @@ public class MainActivity extends Activity {
                 textView.setText(MAIN_MENU_ITEMS[position]);
                 selected = position == mainMenuSelection;
             } else if (menuPage == MENU_PAGE_SETTINGS) {
-                if (position == SETTINGS_ITEM_PLAYBACK) {
-                    textView.setText("解码模式  " + playbackModeLabel());
-                } else if (position == SETTINGS_ITEM_AUTOSTART) {
-                    textView.setText("开机自启  " + (autoStart ? "开启" : "关闭"));
-                }
+                if (position == 0) textView.setText("解码模式  " + playbackModeLabel());
+                else if (position == 1) textView.setText("开机自启  " + (autoStartOnBoot ? "开" : "关"));
+                else textView.setText(SETTINGS_ITEMS[position]);
                 selected = position == settingsSelection;
             } else {
                 Channel channel = channels.get(position);
