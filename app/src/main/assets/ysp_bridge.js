@@ -2,6 +2,9 @@
   "use strict";
 
   var activePlaybackRequestId = "";
+  var videoWatchdogTimer = null;
+  var videoWatchdogLastFrameTime = 0;
+  var videoWatchdogLastTimeUpdate = 0;
 
   function installMseCompatibilityPatch() {
     if (window.__yspTvMseCompatibilityPatchInstalled) {
@@ -133,38 +136,43 @@
     return result;
   }
 
+  var _tvLayoutScheduled = false;
+  var _tvLayoutDone = false;
+
   function applyTvLayout() {
+    if (_tvLayoutScheduled) {
+      return;
+    }
+    _tvLayoutScheduled = true;
     try {
-      if (!document.getElementById("ysp-tv-wrapper-style")) {
+      if (!_tvLayoutDone && !document.getElementById("ysp-tv-wrapper-style")) {
         var style = document.createElement("style");
         style.id = "ysp-tv-wrapper-style";
         style.textContent = [
           "html,body,#app{margin:0!important;padding:0!important;width:100vw!important;height:100vh!important;overflow:hidden!important;background:#000!important;}",
-          ".tv-home,.tv,.tv-main,.tv-main-con,.tv-main-con-l,.tv-main-con-l-vid{position:fixed!important;inset:0!important;width:100vw!important;height:100vh!important;max-width:none!important;max-height:none!important;margin:0!important;padding:0!important;background:#000!important;overflow:hidden!important;}",
+          ".tv-home,.tv,.tv-main,.tv-main-con,.tv-main-con-l,.tv-main-con-l-vid{position:fixed!important;top:0!important;right:0!important;bottom:0!important;left:0!important;width:100vw!important;height:100vh!important;max-width:none!important;max-height:none!important;margin:0!important;padding:0!important;background:#000!important;overflow:hidden!important;}",
           ".tv-main-con-r,.tv-zhan,.header,.footer,.public-com,.activity-com,[class*=Footer],[class*=footer]{display:none!important;}",
           ".tv-main-con-l{float:none!important;}",
           ".tv-main-con-l-vid,.tv-main-con-l-vid *{max-width:none!important;max-height:none!important;}",
-          "video{position:fixed!important;inset:0!important;width:100vw!important;height:100vh!important;object-fit:contain!important;background:#000!important;z-index:2147483646!important;opacity:1!important;visibility:visible!important;transform:translateZ(0)!important;}",
+          "video{position:fixed!important;top:0!important;right:0!important;bottom:0!important;left:0!important;width:100vw!important;height:100vh!important;object-fit:contain!important;background:#000!important;opacity:1!important;visibility:visible!important;playsinline:true!important;webkit-playsinline:true!important;}",
           ".control,.controlBar,.control-bar,.poster,.loading,.play-btn{opacity:0!important;pointer-events:none!important;}"
         ].join("\n");
         document.head.appendChild(style);
+        _tvLayoutDone = true;
       }
-      var videos = document.getElementsByTagName("video");
-      for (var i = 0; i < videos.length; i++) {
-        videos[i].setAttribute("playsinline", "true");
-        videos[i].setAttribute("webkit-playsinline", "true");
-        videos[i].style.width = "100vw";
-        videos[i].style.height = "100vh";
-        videos[i].style.position = "fixed";
-        videos[i].style.left = "0";
-        videos[i].style.top = "0";
-        videos[i].style.objectFit = "contain";
-        videos[i].style.zIndex = "2147483646";
-        videos[i].style.opacity = "1";
-        videos[i].style.visibility = "visible";
+      if (_tvLayoutDone) {
+        var videos = document.getElementsByTagName("video");
+        for (var i = 0; i < videos.length; i++) {
+          if (!videos[i].hasAttribute("ysp-laidout")) {
+            videos[i].setAttribute("ysp-laidout", "1");
+            videos[i].setAttribute("playsinline", "true");
+            videos[i].setAttribute("webkit-playsinline", "true");
+          }
+        }
       }
     } catch (ignored2) {
     }
+    _tvLayoutScheduled = false;
   }
 
   function findTvComponent() {
@@ -345,6 +353,90 @@
       }));
     } catch (ignored) {
     }
+    startVideoWatchdog();
+  }
+
+  function startVideoWatchdog() {
+    stopVideoWatchdog();
+    videoWatchdogLastTimeUpdate = Date.now();
+    var video = getCurrentVideo();
+    if (video) {
+      video.addEventListener("timeupdate", onVideoTimeUpdate);
+      video.addEventListener("playing", onVideoTimeUpdate);
+    }
+    videoWatchdogTimer = setInterval(checkVideoAlive, 1500);
+  }
+
+  function stopVideoWatchdog() {
+    if (videoWatchdogTimer) {
+      clearInterval(videoWatchdogTimer);
+      videoWatchdogTimer = null;
+    }
+    var video = getCurrentVideo();
+    if (video) {
+      video.removeEventListener("timeupdate", onVideoTimeUpdate);
+      video.removeEventListener("playing", onVideoTimeUpdate);
+    }
+  }
+
+  function onVideoTimeUpdate() {
+    videoWatchdogLastTimeUpdate = Date.now();
+  }
+
+  function getCurrentVideo() {
+    var videos = document.getElementsByTagName("video");
+    for (var i = videos.length - 1; i >= 0; i--) {
+      if (videos[i].videoWidth > 0) {
+        return videos[i];
+      }
+    }
+    return videos.length > 0 ? videos[videos.length - 1] : null;
+  }
+
+  function checkVideoAlive() {
+    var video = getCurrentVideo();
+    if (!video) {
+      return;
+    }
+    var now = Date.now();
+    var hasAudio = !video.muted;
+    var hasVideoFrames = video.videoWidth > 0 && video.videoHeight > 0;
+    var timeProgressing = (now - videoWatchdogLastTimeUpdate) < 4000;
+
+    if (!video.paused && !video.ended) {
+      if (hasAudio && hasVideoFrames && !timeProgressing) {
+        console.warn("[YSP] watchdog: video playing but time frozen, forcing refresh");
+        try {
+          video.currentTime = video.currentTime;
+        } catch (ignored) {}
+        forceVideoRepaint();
+      }
+    }
+  }
+
+  function forceVideoRepaint() {
+    applyTvLayout();
+    var video = getCurrentVideo();
+    if (!video) return;
+    try {
+      var s = video.style;
+      var origDisplay = s.display;
+      s.display = "none";
+      video.offsetHeight;
+      s.display = origDisplay;
+    } catch (e) {}
+    try {
+      var player = findTvComponent();
+      if (player) {
+        var p = getOfficialPlayer(player);
+        if (p && p.myVideo && p.myVideo.videoPlayFunc) {
+          p.myVideo.videoPlayFunc();
+        }
+      }
+    } catch (e) {}
+    if (video.paused) {
+      try { video.play(); } catch (e) {}
+    }
   }
 
   function playChannel(requestId, pid, streamId, quality, mode, attempt) {
@@ -367,10 +459,10 @@
       applyTvLayout();
       var component = findTvComponent();
       if (!component || !component.tabA || !component.tabB) {
-        if (attempt < 30) {
+        if (attempt < 40) {
           setTimeout(function () {
             playChannel(requestId, pid, streamId, quality, mode, attempt + 1);
-          }, 500);
+          }, 150);
           return;
         }
         throw new Error("Official TV component is not ready");
@@ -389,22 +481,18 @@
             return;
           }
           applyTvLayout();
-          ensureVideoPlaying(component);
           waitForVideoPlaying(requestId, pid, streamId, quality);
-        }, 200);
+        }, 80);
         return;
       }
       component.selectIndex = match.group;
       if (!isSameOfficialChannel(component, match.channel)) {
         component.changeTV(match.channel);
       }
-      ensureVideoPlaying(component);
       setTimeout(function () {
         if (requestKey !== activePlaybackRequestId) {
           return;
         }
-        applyTvLayout();
-        ensureVideoPlaying(component);
         if (quality && String(quality) !== "fhd") {
           applyOfficialQuality(component, quality);
           setTimeout(function () {
@@ -412,13 +500,13 @@
               return;
             }
             applyTvLayout();
-            ensureVideoPlaying(component);
             waitForVideoPlaying(requestId, pid, streamId, quality);
-          }, 200);
+          }, 80);
           return;
         }
+        applyTvLayout();
         waitForVideoPlaying(requestId, pid, streamId, quality);
-      }, 250);
+      }, 80);
     } catch (error) {
       try {
         YspAndroid.onPlayback(String(requestId), JSON.stringify({

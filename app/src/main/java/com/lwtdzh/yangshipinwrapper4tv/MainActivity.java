@@ -52,6 +52,7 @@ public class MainActivity extends Activity {
     private static final String PREF_QUALITY = "quality";
     private static final String PREF_CHANNEL_PID = "channel_pid";
     private static final String PREF_PLAYBACK_MODE = "playback_mode";
+    private static final String PLAYBACK_MODE_DEFAULT = "default";
     private static final String PLAYBACK_MODE_HW = "hw";
     private static final String PLAYBACK_MODE_SW = "sw";
     private static final String[] QUALITY_ORDER = new String[]{"hd", "shd", "fhd"};
@@ -130,9 +131,9 @@ public class MainActivity extends Activity {
         if (qualityIndex(preferredQuality) < 0) {
             preferredQuality = "fhd";
         }
-        playbackMode = preferences.getString(PREF_PLAYBACK_MODE, PLAYBACK_MODE_HW);
-        if (!PLAYBACK_MODE_SW.equals(playbackMode)) {
-            playbackMode = PLAYBACK_MODE_HW;
+        playbackMode = preferences.getString(PREF_PLAYBACK_MODE, PLAYBACK_MODE_DEFAULT);
+        if (!PLAYBACK_MODE_SW.equals(playbackMode) && !PLAYBACK_MODE_HW.equals(playbackMode)) {
+            playbackMode = PLAYBACK_MODE_DEFAULT;
         }
 
         buildUi();
@@ -209,7 +210,7 @@ public class MainActivity extends Activity {
 
     @SuppressLint({"SetJavaScriptEnabled", "AddJavascriptInterface"})
     private void setupProtocolBridge(Bundle savedInstanceState) {
-        WebView.setWebContentsDebuggingEnabled(true);
+        WebView.setWebContentsDebuggingEnabled(false);
         bridgeWebView = new WebView(this);
         bridgeWebView.setFocusable(false);
         bridgeWebView.setBackgroundColor(Color.BLACK);
@@ -218,17 +219,25 @@ public class MainActivity extends Activity {
         WebSettings settings = bridgeWebView.getSettings();
         settings.setJavaScriptEnabled(true);
         settings.setDomStorageEnabled(true);
-        settings.setDatabaseEnabled(true);
+        settings.setDatabaseEnabled(false);
         settings.setCacheMode(WebSettings.LOAD_DEFAULT);
         settings.setMediaPlaybackRequiresUserGesture(false);
         settings.setLoadsImagesAutomatically(false);
         settings.setBlockNetworkImage(true);
+        settings.setRenderPriority(WebSettings.RenderPriority.HIGH);
+        settings.setSupportMultipleWindows(false);
+        settings.setJavaScriptCanOpenWindowsAutomatically(false);
+        settings.setSaveFormData(false);
+        settings.setGeolocationEnabled(false);
+        settings.setUseWideViewPort(false);
+        settings.setLoadWithOverviewMode(false);
+        settings.setNeedInitialFocus(false);
         settings.setUserAgentString("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36");
         bridgeWebView.setWebChromeClient(new WebChromeClient());
         bridgeWebView.setWebViewClient(new WebViewClient() {
             @Override
             public void onPageFinished(WebView view, String url) {
-                scheduleBridgeInjection(1500);
+                scheduleBridgeInjection(300);
             }
         });
         bridgeWebView.addJavascriptInterface(new BridgeCallbacks(), "YspAndroid");
@@ -240,6 +249,7 @@ public class MainActivity extends Activity {
             bridgeWebView.restoreState(savedInstanceState);
         } else {
             bridgeWebView.loadUrl(YSP_HOME_URL);
+            scheduleBridgeInjection(500);
         }
     }
 
@@ -247,10 +257,35 @@ public class MainActivity extends Activity {
         if (bridgeWebView == null) {
             return;
         }
-        // Android WebView video is backed by a separate accelerated surface. Forcing
-        // the WebView itself into a software layer leaves the official player with
-        // audio but a black video surface on TV/emulator builds.
-        bridgeWebView.setLayerType(View.LAYER_TYPE_HARDWARE, null);
+        if (PLAYBACK_MODE_SW.equals(playbackMode)) {
+            bridgeWebView.setLayerType(View.LAYER_TYPE_NONE, null);
+            bridgeWebView.setOverScrollMode(View.OVER_SCROLL_NEVER);
+            bridgeWebView.setScrollBarStyle(View.SCROLLBARS_INSIDE_OVERLAY);
+            bridgeWebView.setHorizontalScrollBarEnabled(false);
+            bridgeWebView.setVerticalScrollBarEnabled(false);
+            invokeReflected("setEnableSmoothTransition", false);
+            Log.i(TAG, "playback_mode layer=NONE+SW (low-gpu compatibility)");
+        } else if (PLAYBACK_MODE_HW.equals(playbackMode)) {
+            bridgeWebView.setLayerType(View.LAYER_TYPE_HARDWARE, null);
+            bridgeWebView.setOverScrollMode(View.OVER_SCROLL_IF_CONTENT_SCROLLS);
+            invokeReflected("setEnableSmoothTransition", true);
+            Log.i(TAG, "playback_mode layer=HARDWARE (performance)");
+        } else {
+            bridgeWebView.setLayerType(View.LAYER_TYPE_NONE, null);
+            bridgeWebView.setOverScrollMode(View.OVER_SCROLL_NEVER);
+            bridgeWebView.setScrollBarStyle(View.SCROLLBARS_INSIDE_OVERLAY);
+            bridgeWebView.setHorizontalScrollBarEnabled(false);
+            bridgeWebView.setVerticalScrollBarEnabled(false);
+            invokeReflected("setEnableSmoothTransition", false);
+            Log.i(TAG, "playback_mode DEFAULT layer=NONE (recommended, video safe)");
+        }
+    }
+
+    private void invokeReflected(String methodName, boolean arg) {
+        try {
+            bridgeWebView.getClass().getMethod(methodName, boolean.class).invoke(bridgeWebView, arg);
+        } catch (Throwable ignored) {
+        }
     }
 
     private void scheduleBridgeInjection(long delayMs) {
@@ -272,8 +307,8 @@ public class MainActivity extends Activity {
         } catch (Exception e) {
             showOverlay("协议桥接失败: " + e.getMessage(), false);
         }
-        if (!channelsLoaded && bridgeAttempts < 12) {
-            scheduleBridgeInjection(1500);
+        if (!channelsLoaded && bridgeAttempts < 15) {
+            scheduleBridgeInjection(500);
         }
     }
 
@@ -597,6 +632,7 @@ public class MainActivity extends Activity {
         Log.i(TAG, "menu_select index=" + currentIndex + " name=" + channels.get(currentIndex).name);
         channelAdapter.notifyDataSetChanged();
         channelListView.setSelection(currentIndex);
+        hideMenu();
         requestCurrentStream();
     }
 
@@ -673,10 +709,8 @@ public class MainActivity extends Activity {
                 return true;
             }
             if (keyCode == KeyEvent.KEYCODE_DPAD_LEFT) {
-                if (menuPage == MENU_PAGE_CHANNELS) {
-                    showMainMenu(MAIN_MENU_CHANNELS);
-                } else if (menuPage == MENU_PAGE_SETTINGS) {
-                    showMainMenu(MAIN_MENU_SETTINGS);
+                if (menuPage == MENU_PAGE_CHANNELS || menuPage == MENU_PAGE_SETTINGS) {
+                    showMainMenu(menuPage == MENU_PAGE_SETTINGS ? MAIN_MENU_SETTINGS : MAIN_MENU_CHANNELS);
                 }
                 return true;
             }
@@ -685,6 +719,7 @@ public class MainActivity extends Activity {
                     enterMainMenuSelection();
                 } else if (menuPage == MENU_PAGE_SETTINGS) {
                     togglePlaybackMode();
+                    hideMenu();
                 }
                 return true;
             }
@@ -693,13 +728,19 @@ public class MainActivity extends Activity {
                     enterMainMenuSelection();
                 } else if (menuPage == MENU_PAGE_SETTINGS) {
                     togglePlaybackMode();
+                    hideMenu();
                 } else {
                     selectMenuChannel();
+                    hideMenu();
                 }
                 return true;
             }
             if (keyCode == KeyEvent.KEYCODE_BACK) {
-                hideMenu();
+                if (menuPage == MENU_PAGE_MAIN) {
+                    hideMenu();
+                } else {
+                    showMainMenu(menuPage == MENU_PAGE_SETTINGS ? MAIN_MENU_SETTINGS : MAIN_MENU_CHANNELS);
+                }
                 return true;
             }
             return true;
@@ -854,6 +895,33 @@ public class MainActivity extends Activity {
         super.onSaveInstanceState(outState);
         if (bridgeWebView != null) {
             bridgeWebView.saveState(outState);
+        }
+    }
+
+    @Override
+    public void onTrimMemory(int level) {
+        super.onTrimMemory(level);
+        if (bridgeWebView == null) {
+            return;
+        }
+        if (level == TRIM_MEMORY_COMPLETE || level == TRIM_MEMORY_MODERATE) {
+            bridgeWebView.loadUrl("about:blank");
+            bridgeWebView.clearHistory();
+            Log.i(TAG, "trim_memory level=" + level + " cleared WebView");
+        } else if (level >= TRIM_MEMORY_BACKGROUND) {
+            bridgeWebView.clearCache(true);
+            Log.i(TAG, "trim_memory level=" + level + " cleared WebView cache");
+        }
+    }
+
+    @Override
+    public void onLowMemory() {
+        super.onLowMemory();
+        if (bridgeWebView != null) {
+            bridgeWebView.loadUrl("about:blank");
+            bridgeWebView.clearHistory();
+            bridgeWebView.clearCache(true);
+            Log.i(TAG, "onLowMemory cleared WebView");
         }
     }
 
