@@ -6,6 +6,8 @@ import android.app.ActivityManager;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.graphics.Color;
+import android.graphics.Paint;
+import android.graphics.Path;
 import android.graphics.drawable.ColorDrawable;
 import android.os.Build;
 import android.os.Bundle;
@@ -65,6 +67,7 @@ public class MainActivity extends Activity {
 
     private static final long JS_HEARTBEAT_TIMEOUT_MS = 6000;
     private static final long FIRST_FRAME_TIMEOUT_MS = 15000;
+    private static final long OVERLAY_HIDE_AFTER_FIRST_FRAME_MS = 2000;
     private static final int MAX_RECOVERY_LEVEL = 4;
 
     private final Handler handler = new Handler(Looper.getMainLooper());
@@ -110,6 +113,7 @@ public class MainActivity extends Activity {
                 showPlaybackOverlay();
                 return;
             }
+            showBridgeWebView();
             overlayText.setVisibility(View.GONE);
         }
     };
@@ -120,6 +124,7 @@ public class MainActivity extends Activity {
             if (overlayWaitingFirstFrame) {
                 overlayWaitingFirstFrame = false;
                 Log.w(TAG, "first_frame timeout, hiding overlay");
+                showBridgeWebView();
                 overlayText.setVisibility(View.GONE);
             }
         }
@@ -459,10 +464,6 @@ public class MainActivity extends Activity {
                 showOverlay("播放失败: " + object.optString("error"), false);
                 return;
             }
-            if (bridgeWebView != null) {
-                bridgeWebView.setVisibility(View.VISIBLE);
-                Log.i(TAG, "bridgeWebView set VISIBLE");
-            }
             String actualQuality = object.optString("quality", preferredQuality);
             if (qualityIndex(actualQuality) >= 0) {
                 preferredQuality = actualQuality;
@@ -513,22 +514,31 @@ public class MainActivity extends Activity {
         }
     }
 
+    private void showBridgeWebView() {
+        if (bridgeWebView != null && bridgeWebView.getVisibility() != View.VISIBLE) {
+            bridgeWebView.setVisibility(View.VISIBLE);
+            Log.i(TAG, "bridgeWebView set VISIBLE (real frame arrived)");
+        }
+    }
+
     private void onFirstFrame(boolean realFrame, String note) {
         firstFrameReceived = true;
         if (realFrame) realFrameReceived = true;
+        if (realFrame) showBridgeWebView();
         if (overlayWaitingFirstFrame) {
             if (realFrame) {
                 overlayWaitingFirstFrame = false;
                 handler.removeCallbacks(firstFrameTimeoutRunnable);
                 handler.removeCallbacks(hideOverlayRunnable);
-                overlayText.setVisibility(View.GONE);
-                Log.i(TAG, "overlay_hide triggered by REAL first_frame");
+                handler.postDelayed(hideOverlayRunnable, OVERLAY_HIDE_AFTER_FIRST_FRAME_MS);
+                Log.i(TAG, "overlay_hide scheduled REAL first_frame +" + OVERLAY_HIDE_AFTER_FIRST_FRAME_MS + "ms");
             } else if (!note.contains("pending_real")) {
+                showBridgeWebView();
                 overlayWaitingFirstFrame = false;
                 handler.removeCallbacks(firstFrameTimeoutRunnable);
                 handler.removeCallbacks(hideOverlayRunnable);
-                overlayText.setVisibility(View.GONE);
-                Log.i(TAG, "overlay_hide triggered by tentative first_frame");
+                handler.postDelayed(hideOverlayRunnable, OVERLAY_HIDE_AFTER_FIRST_FRAME_MS);
+                Log.i(TAG, "overlay_hide scheduled tentative first_frame +" + OVERLAY_HIDE_AFTER_FIRST_FRAME_MS + "ms");
             } else {
                 Log.i(TAG, "first_frame tentative, waiting for real frame");
             }
@@ -537,12 +547,13 @@ public class MainActivity extends Activity {
 
     private void onRealFrame() {
         realFrameReceived = true;
+        showBridgeWebView();
         if (overlayWaitingFirstFrame) {
             overlayWaitingFirstFrame = false;
             handler.removeCallbacks(firstFrameTimeoutRunnable);
             handler.removeCallbacks(hideOverlayRunnable);
-            overlayText.setVisibility(View.GONE);
-            Log.i(TAG, "overlay_hide triggered by canvas real_frame");
+            handler.postDelayed(hideOverlayRunnable, OVERLAY_HIDE_AFTER_FIRST_FRAME_MS);
+            Log.i(TAG, "overlay_hide scheduled canvas real_frame +" + OVERLAY_HIDE_AFTER_FIRST_FRAME_MS + "ms");
         }
     }
 
@@ -700,6 +711,9 @@ public class MainActivity extends Activity {
         overlayWaitingFirstFrame = true;
         handler.removeCallbacks(hideOverlayRunnable);
         handler.removeCallbacks(firstFrameTimeoutRunnable);
+        if (bridgeWebView != null) {
+            bridgeWebView.setVisibility(View.INVISIBLE);
+        }
         overlayText.setText(overlay);
         overlayText.setVisibility(View.VISIBLE);
         handler.postDelayed(firstFrameTimeoutRunnable, FIRST_FRAME_TIMEOUT_MS);
@@ -731,29 +745,29 @@ public class MainActivity extends Activity {
         menuPage = MENU_PAGE_MAIN;
         mainMenuSelection = selectedItem;
         updateMenuHeader();
-        menuPanel.setVisibility(View.VISIBLE);
-        channelAdapter.notifyDataSetChanged();
         channelListView.setSelection(mainMenuSelection);
+        channelAdapter.notifyDataSetChanged();
+        menuPanel.setVisibility(View.VISIBLE);
     }
 
     private void showChannelsMenu() {
         menuPage = MENU_PAGE_CHANNELS;
         menuSelection = currentIndex;
         updateMenuHeader();
-        menuPanel.setVisibility(View.VISIBLE);
-        Log.i(TAG, "menu_channels");
-        channelAdapter.notifyDataSetChanged();
         channelListView.setSelection(menuSelection);
+        channelAdapter.notifyDataSetChanged();
+        Log.i(TAG, "menu_channels");
+        menuPanel.setVisibility(View.VISIBLE);
     }
 
     private void showSettingsMenu() {
         menuPage = MENU_PAGE_SETTINGS;
         settingsSelection = 0;
         updateMenuHeader();
-        menuPanel.setVisibility(View.VISIBLE);
-        Log.i(TAG, "menu_settings mode=" + playbackMode);
-        channelAdapter.notifyDataSetChanged();
         channelListView.setSelection(settingsSelection);
+        channelAdapter.notifyDataSetChanged();
+        Log.i(TAG, "menu_settings mode=" + playbackMode);
+        menuPanel.setVisibility(View.VISIBLE);
     }
 
     private void hideMenu() {
@@ -773,17 +787,20 @@ public class MainActivity extends Activity {
     private void moveMenuSelection(int delta) {
         if (menuPage == MENU_PAGE_MAIN) {
             mainMenuSelection = (mainMenuSelection + delta + MAIN_MENU_ITEMS.length) % MAIN_MENU_ITEMS.length;
+            Log.i(TAG, "menu_move_main idx=" + mainMenuSelection);
             channelListView.setSelection(mainMenuSelection);
             channelAdapter.notifyDataSetChanged();
             return;
         }
         if (menuPage == MENU_PAGE_SETTINGS) {
+            Log.i(TAG, "menu_move_settings");
             channelListView.setSelection(0);
             channelAdapter.notifyDataSetChanged();
             return;
         }
         if (channels.isEmpty()) return;
         menuSelection = (menuSelection + delta + channels.size()) % channels.size();
+        Log.i(TAG, "menu_move_channels idx=" + menuSelection + " name=" + channels.get(menuSelection).name);
         channelListView.setSelection(menuSelection);
         channelAdapter.notifyDataSetChanged();
     }
@@ -807,8 +824,8 @@ public class MainActivity extends Activity {
         if (channels.isEmpty()) return;
         currentIndex = menuSelection;
         Log.i(TAG, "menu_select idx=" + currentIndex + " name=" + channels.get(currentIndex).name);
-        channelAdapter.notifyDataSetChanged();
         channelListView.setSelection(currentIndex);
+        channelAdapter.notifyDataSetChanged();
         hideMenu();
         requestCurrentStream();
     }
@@ -923,20 +940,44 @@ public class MainActivity extends Activity {
     private void handleTouchSwipe(float dx, float dy, boolean startedInMenu) {
         if (menuPanel.getVisibility() == View.VISIBLE && startedInMenu) {
             if (Math.abs(dx) > Math.abs(dy)) {
-                if (dx < 0 && menuPage != MENU_PAGE_MAIN) {
-                    showMainMenu(menuPage == MENU_PAGE_SETTINGS ? MAIN_MENU_SETTINGS : MAIN_MENU_CHANNELS);
-                } else if (dx > 0 && menuPage == MENU_PAGE_MAIN) {
-                    enterMainMenuSelection();
-                } else if (dx > 0 && menuPage == MENU_PAGE_SETTINGS) {
-                    cyclePlaybackMode();
-                }
+                handleMenuHorizontalSwipe(dx);
             }
             return;
         }
         if (Math.abs(dx) > Math.abs(dy)) {
-            changeQuality(dx > 0 ? 1 : -1);
+            if (dx > 0) {
+                Log.i(TAG, "touch_swipe_right");
+                changeQuality(1);
+            } else {
+                Log.i(TAG, "touch_swipe_left");
+                changeQuality(-1);
+            }
         } else {
-            changeChannel(dy > 0 ? 1 : -1);
+            if (dy > 0) {
+                Log.i(TAG, "touch_swipe_down");
+                changeChannel(1);
+            } else {
+                Log.i(TAG, "touch_swipe_up");
+                changeChannel(-1);
+            }
+        }
+    }
+
+    private void handleMenuHorizontalSwipe(float dx) {
+        if (dx < 0) {
+            Log.i(TAG, "touch_menu_swipe_left");
+            if (menuPage == MENU_PAGE_CHANNELS) {
+                showMainMenu(MAIN_MENU_CHANNELS);
+            } else if (menuPage == MENU_PAGE_SETTINGS) {
+                showMainMenu(MAIN_MENU_SETTINGS);
+            }
+            return;
+        }
+        Log.i(TAG, "touch_menu_swipe_right");
+        if (menuPage == MENU_PAGE_MAIN) {
+            enterMainMenuSelection();
+        } else if (menuPage == MENU_PAGE_SETTINGS) {
+            cyclePlaybackMode();
         }
     }
 
@@ -1143,38 +1184,93 @@ public class MainActivity extends Activity {
     }
 
     private final class GestureTraceView extends View {
+        private final Path path = new Path();
+        private final Paint paint = new Paint();
+        private float lastY;
+        private boolean downInMenu;
+        private boolean moved;
         private float downX, downY;
         private long downTime;
-        private boolean startedInMenu;
+        private final Runnable clearPathRunnable = new Runnable() {
+            @Override
+            public void run() {
+                path.reset();
+                invalidate();
+            }
+        };
 
         GestureTraceView(Context context) {
             super(context);
+            paint.setColor(0xFF35D7FF);
+            paint.setStyle(Paint.Style.STROKE);
+            paint.setStrokeCap(Paint.Cap.ROUND);
+            paint.setStrokeJoin(Paint.Join.ROUND);
+            paint.setStrokeWidth(dp(4));
+            setWillNotDraw(false);
             setClickable(true);
             setFocusable(false);
         }
 
         @Override
+        protected void onDraw(android.graphics.Canvas canvas) {
+            super.onDraw(canvas);
+            canvas.drawPath(path, paint);
+        }
+
+        @Override
         public boolean onTouchEvent(MotionEvent event) {
-            switch (event.getAction()) {
+            float x = event.getX();
+            float y = event.getY();
+            switch (event.getActionMasked()) {
                 case MotionEvent.ACTION_DOWN:
-                    downX = event.getX();
-                    downY = event.getY();
+                    handler.removeCallbacks(clearPathRunnable);
+                    downX = x;
+                    downY = y;
                     downTime = System.currentTimeMillis();
-                    startedInMenu = isPointInsideMenu(downX, downY);
+                    lastY = y;
+                    downInMenu = isPointInsideMenu(x, y);
+                    moved = false;
+                    path.reset();
+                    path.moveTo(x, y);
+                    invalidate();
+                    return true;
+                case MotionEvent.ACTION_MOVE:
+                    path.lineTo(x, y);
+                    float totalDx = x - downX;
+                    float totalDy = y - downY;
+                    if (Math.abs(totalDx) > touchSlop || Math.abs(totalDy) > touchSlop) {
+                        moved = true;
+                    }
+                    if (menuPanel.getVisibility() == View.VISIBLE && downInMenu) {
+                        float stepDy = y - lastY;
+                        if (Math.abs(stepDy) >= 1f) {
+                            channelListView.smoothScrollBy((int) -stepDy, 0);
+                        }
+                    }
+                    lastY = y;
+                    invalidate();
                     return true;
                 case MotionEvent.ACTION_UP:
-                    float dx = event.getX() - downX;
-                    float dy = event.getY() - downY;
+                case MotionEvent.ACTION_CANCEL:
+                    path.lineTo(x, y);
+                    invalidate();
+                    float dx = x - downX;
+                    float dy = y - downY;
                     float dist = (float) Math.sqrt(dx * dx + dy * dy);
                     long duration = System.currentTimeMillis() - downTime;
-                    if (dist < touchSlop && duration < 300) {
-                        handleTouchTap(downX, downY);
-                    } else if (dist > touchSlop * 2) {
-                        handleTouchSwipe(dx, dy, startedInMenu);
+                    boolean isSwipe = moved && Math.max(Math.abs(dx), Math.abs(dy)) >= dp(48);
+                    if (event.getActionMasked() == MotionEvent.ACTION_UP) {
+                        if (isSwipe) {
+                            handleTouchSwipe(dx, dy, downInMenu);
+                        } else if (dist < touchSlop && duration < 300) {
+                            handleTouchTap(downX, downY);
+                        }
                     }
+                    handler.postDelayed(clearPathRunnable, 450);
+                    return true;
+                default:
                     return true;
             }
-            return true;
         }
     }
 }
