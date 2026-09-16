@@ -1,6 +1,14 @@
 (function () {
   "use strict";
 
+  if (window.__yspBridgeReady) {
+    console.log("[YSP] bridge already ready, skip re-inject");
+    return;
+  }
+  window.__yspBridgeReady = true;
+
+  console.log("[YSP] === bridge script STARTED ===");
+
   var activePlaybackRequestId = "";
   var videoWatchdogTimer = null;
   var videoWatchdogLastTimeUpdate = 0;
@@ -12,11 +20,32 @@
   var jsHeartbeatTimer = null;
   var videoElementFingerprint = "";
   var lastPlaybackQuality = "";
+  var channelsLoadedReported = false;
+  var globalHeartbeatStarted = false;
+
+  var bridgeAvailable = null;
+  function checkBridge() {
+    if (bridgeAvailable !== null) return bridgeAvailable;
+    try {
+      bridgeAvailable = typeof YspAndroid !== "undefined" && YspAndroid !== null;
+    } catch (e) {
+      bridgeAvailable = false;
+    }
+    if (!bridgeAvailable) {
+      console.warn("[YSP] YspAndroid bridge NOT available!");
+    } else {
+      console.log("[YSP] YspAndroid bridge OK");
+    }
+    return bridgeAvailable;
+  }
 
   function sendEvent(name, payload) {
+    if (!checkBridge()) return;
     try {
       YspAndroid.onEvent(String(name), JSON.stringify(payload || {}));
-    } catch (ignored) {}
+    } catch (e) {
+      console.warn("[YSP] sendEvent error: " + e.message);
+    }
   }
 
   function sendHeartbeat() {
@@ -35,6 +64,12 @@
       hasRealFrame: hasRealFrame,
       fpsLikely: v && !v.paused && !v.ended && v.videoWidth > 0
     });
+  }
+
+  function startGlobalHeartbeat() {
+    if (globalHeartbeatStarted) return;
+    globalHeartbeatStarted = true;
+    jsHeartbeatTimer = setInterval(sendHeartbeat, 2500);
   }
 
   function installMseCompatibilityPatch() {
@@ -81,6 +116,7 @@
   function captureWebpackRequire() {
     if (window.__ysp_tv_wreq) return window.__ysp_tv_wreq;
     if (!window.webpackJsonp || !window.webpackJsonp.push) {
+      console.warn("[YSP] webpackJsonp not ready, window keys: " + Object.keys(window).filter(function(k){return k.indexOf('webpack')>=0}).join(','));
       throw new Error("Yangshipin webpack runtime is not ready");
     }
     window.webpackJsonp.push([
@@ -89,10 +125,41 @@
       [["__ysp_tv_capture__"]]
     ]);
     if (!window.__ysp_tv_wreq) throw new Error("Unable to capture Yangshipin webpack require");
+    console.log("[YSP] webpack require captured OK");
     return window.__ysp_tv_wreq;
   }
 
-  function collectChannels(root) {
+  function collectChannelsFromVue(component) {
+    var result = [];
+    var seen = {};
+    var groups = [component.tabA || [], component.tabB || []];
+    for (var g = 0; g < groups.length; g++) {
+      var list = groups[g];
+      if (!list) continue;
+      for (var i = 0; i < list.length; i++) {
+        var channel = list[i];
+        if (!channel) continue;
+        var pid = channel.pid;
+        var streamId = channel.streamId;
+        var name = channel.channelName || channel.name;
+        if (!pid || !streamId || !name) continue;
+        if (String(channel.payType || "") !== "879") continue;
+        var key = String(pid) + ":" + String(streamId);
+        if (seen[key]) continue;
+        seen[key] = true;
+        result.push({
+          name: String(name),
+          pid: String(pid),
+          streamId: String(streamId),
+          type: String(channel.channelType || ""),
+          is4K: !!channel.is4K
+        });
+      }
+    }
+    return result;
+  }
+
+  function collectChannelsFromApi(pageData) {
     var result = [];
     var seen = {};
     function visit(value) {
@@ -122,7 +189,7 @@
       var keys = Object.keys(value);
       for (var k = 0; k < keys.length; k++) visit(value[keys[k]]);
     }
-    visit(root);
+    visit(pageData);
     return result;
   }
 
@@ -164,11 +231,15 @@
 
   function findTvComponent() {
     var root = document.getElementById("app");
-    var rootVue = root && root.__vue__;
+    if (!root) { console.warn("[YSP] findTvComponent: no #app element"); return null; }
+    var rootVue = root.__vue__;
+    if (!rootVue) { console.warn("[YSP] findTvComponent: #app has no __vue__, vue count on page: " + document.querySelectorAll('*').length); return null; }
     var seen = [];
+    var searchCount = 0;
     function visit(vm) {
       if (!vm || seen.indexOf(vm) >= 0) return null;
       seen.push(vm);
+      searchCount++;
       if (vm.changeTV && vm.setTvConfig && vm.tabA && vm.tabB) return vm;
       var children = vm.$children || [];
       for (var i = 0; i < children.length; i++) {
@@ -177,7 +248,14 @@
       }
       return null;
     }
-    return visit(rootVue);
+    var result = visit(rootVue);
+    if (!result) {
+      var tabAKeys = Object.keys(rootVue.$data || {}).filter(function(k){return /tab|channel|tv/i.test(k);});
+      console.warn("[YSP] findTvComponent: searched " + searchCount + " components, no TV component found. root keys: " + Object.keys(rootVue.$data || {}).slice(0,20).join(',') + " tab-like keys: " + tabAKeys.join(','));
+    } else {
+      console.log("[YSP] findTvComponent: found TV component after " + searchCount + " searches, tabA=" + (result.tabA ? result.tabA.length : 0) + " tabB=" + (result.tabB ? result.tabB.length : 0));
+    }
+    return result;
   }
 
   function findChannelInOfficialComponent(component, pid, streamId) {
@@ -252,7 +330,6 @@
     }
     var canvas = video.__ysp_black_detect_canvas;
     try {
-      var w = Math.min(canvas.width || 0, 160);
       if (!canvas.width) { canvas.width = 160; canvas.height = 90; }
       var ctx = canvas.getContext("2d");
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
@@ -289,10 +366,6 @@
     if (videoFirstFrameReported) return;
     var v = getCurrentVideo();
     if (!v) return;
-    var fp = v.videoWidth + "x" + v.videoHeight;
-    if (fp !== videoElementFingerprint && (v.videoWidth > 0 || v.readyState >= 2)) {
-      videoElementFingerprint = fp;
-    }
     if (v.readyState >= 2 && v.videoWidth > 0 && !v.paused) {
       var hasRealFrame = detectRealVideoFrame();
       if (hasRealFrame) {
@@ -303,7 +376,6 @@
           duration: v.duration,
           realFrame: true
         });
-        console.log("[YSP] first_frame REAL reported");
       } else if (v.readyState >= 3 || (v.currentTime && v.currentTime > 0.1)) {
         videoFirstFrameReported = true;
         sendEvent("first_frame", {
@@ -313,7 +385,6 @@
           realFrame: false,
           note: "video_ready_but_pending_real_frame"
         });
-        console.log("[YSP] first_frame tentative reported (video ready, real frame pending)");
       }
     }
   }
@@ -329,6 +400,7 @@
 
   function startVideoWatchdog() {
     stopVideoWatchdog();
+    startGlobalHeartbeat();
     videoFirstFrameReported = false;
     watchdogStuckCount = 0;
     videoWatchdogLastTimeUpdate = Date.now();
@@ -339,7 +411,6 @@
     }
     videoWatchdogTimer = setInterval(checkVideoAlive, 1200);
     canvasBlackDetectTimer = setInterval(detectRealVideoFrame, 2000);
-    jsHeartbeatTimer = setInterval(sendHeartbeat, 2500);
   }
 
   function attachVideoListeners(video) {
@@ -369,7 +440,6 @@
       video.removeEventListener("pause", onVideoPaused);
     }
     if (canvasBlackDetectTimer) { clearInterval(canvasBlackDetectTimer); canvasBlackDetectTimer = null; }
-    if (jsHeartbeatTimer) { clearInterval(jsHeartbeatTimer); jsHeartbeatTimer = null; }
   }
 
   function onVideoTimeUpdate() {
@@ -388,19 +458,16 @@
   }
 
   function onVideoStalled() {
-    console.warn("[YSP] video stalled");
     sendEvent("stalled", {});
   }
 
   function onVideoEnded() {
-    console.warn("[YSP] video ended unexpectedly");
     sendEvent("ended", {});
   }
 
   function onVideoPaused() {
     var v = getCurrentVideo();
     if (v && !v.ended && v.readyState >= 2) {
-      console.warn("[YSP] video paused unexpectedly, restarting");
       try { v.play(); } catch (ignored) {}
     }
   }
@@ -430,7 +497,6 @@
 
     if (actuallyPlaying && hasVideoFrames && timeFrozen) {
       watchdogStuckCount++;
-      console.warn("[YSP] watchdog: time frozen count=" + watchdogStuckCount);
       forceVideoRepaint();
       if (watchdogStuckCount >= 2) {
         watchdogStuckCount = 0;
@@ -438,18 +504,14 @@
         hardRefreshVideo();
       }
     } else if (!video.paused && !hasVideoFrames && neverPlayed) {
-      console.warn("[YSP] watchdog: video never played no frames");
       sendEvent("black_screen", { reason: "no_frames_never_played" });
       ensureVideoPlaying(null);
     } else if (video.ended) {
-      console.warn("[YSP] watchdog: video ended");
       sendEvent("black_screen", { reason: "ended" });
       ensureVideoPlaying(null);
     } else if (video.paused && !video.ended && video.readyState >= 2) {
-      console.warn("[YSP] watchdog: video paused ready");
       ensureVideoPlaying(null);
     } else if (actuallyPlaying && hasVideoFrames && detectedBlack && !videoFirstFrameReported) {
-      console.warn("[YSP] watchdog: canvas-detected black before first frame");
       watchdogStuckCount++;
       if (watchdogStuckCount >= 3) {
         watchdogStuckCount = 0;
@@ -482,11 +544,10 @@
     if (component) {
       try {
         if (component.changeTV && component.tvIndex) {
-          console.log("[YSP] hard refresh: re-changeTV");
           var savedIndex = component.tvIndex;
           component.changeTV(savedIndex);
         }
-      } catch (e) { console.warn("[YSP] hardRefresh changeTV failed: " + e.message); }
+      } catch (e) {}
     }
     setTimeout(function () {
       ensureVideoPlaying(component);
@@ -536,17 +597,100 @@
     }
   }
 
-  async function loadChannels() {
+  function tryLoadChannelsFromVue() {
+    var component = findTvComponent();
+    if (!component) return null;
+    var channels = collectChannelsFromVue(component);
+    if (channels && channels.length > 0) return channels;
+    return null;
+  }
+
+  async function tryLoadChannelsFromApi() {
+    var apiModuleIds = ["03ef", "a1b2", "c3d4"];
+    var methodNames = ["h", "getChannelList", "getChannels", "fetchChannels", "getTVChannels"];
+    var pageIds = ["PG00000004", "PG00000001"];
+
     try {
-      applyTvLayout();
       var require = captureWebpackRequire();
-      var api = require("03ef");
-      var page = await api.h("PG00000004");
-      var channels = collectChannels(page && page.data);
-      try { YspAndroid.onChannels(JSON.stringify(channels)); } catch (ignored) {}
-    } catch (error) {
-      try { YspAndroid.onError("channels", error && (error.message || String(error))); } catch (ignored) {}
+    } catch (e) {
+      console.warn("[YSP] cannot capture webpack require: " + e.message);
+      return null;
     }
+
+    for (var mi = 0; mi < apiModuleIds.length; mi++) {
+      try {
+        var mod = require(apiModuleIds[mi]);
+        if (!mod) continue;
+        for (var ki = 0; ki < methodNames.length; ki++) {
+          if (typeof mod[methodNames[ki]] !== "function") continue;
+          for (var pi = 0; pi < pageIds.length; pi++) {
+            try {
+              var result = await mod[methodNames[ki]](pageIds[pi]);
+              if (result) {
+                var channels = collectChannelsFromApi(result.data || result);
+                if (channels && channels.length > 0) {
+                  console.log("[YSP] loaded " + channels.length + " channels via API " + apiModuleIds[mi] + "." + methodNames[ki]);
+                  return channels;
+                }
+              }
+            } catch (e2) {}
+          }
+        }
+      } catch (e3) {}
+    }
+
+    for (var modId in window) {
+      if (modId.length <= 5 && /^[a-f0-9]+$/i.test(modId)) {
+        try {
+          var m = require(modId);
+          if (!m) continue;
+          for (var k in m) {
+            if (typeof m[k] === "function") {
+              try {
+                var r = await m[k]("PG00000004");
+                if (r) {
+                  var ch = collectChannelsFromApi(r.data || r);
+                  if (ch && ch.length > 0) {
+                    console.log("[YSP] discovered channels via " + modId + "." + k);
+                    return ch;
+                  }
+                }
+              } catch (e4) {}
+            }
+          }
+        } catch (e5) {}
+      }
+    }
+
+    return null;
+  }
+
+  function loadChannels() {
+    startGlobalHeartbeat();
+    applyTvLayout();
+
+    if (channelsLoadedReported) return;
+
+    var vueChannels = tryLoadChannelsFromVue();
+    if (vueChannels && vueChannels.length > 0) {
+      channelsLoadedReported = true;
+      try { YspAndroid.onChannels(JSON.stringify(vueChannels)); } catch (ignored) {}
+      console.log("[YSP] loaded " + vueChannels.length + " channels from Vue component");
+      return;
+    }
+
+    tryLoadChannelsFromApi().then(function (apiChannels) {
+      if (apiChannels && apiChannels.length > 0) {
+        channelsLoadedReported = true;
+        try { YspAndroid.onChannels(JSON.stringify(apiChannels)); } catch (ignored) {}
+      } else {
+        console.warn("[YSP] failed to load channels from both Vue and API, will retry");
+      }
+    }).catch(function (err) {
+      console.warn("[YSP] loadChannels API error: " + (err && err.message));
+    });
+
+    setTimeout(loadChannels, 1500);
   }
 
   function playChannel(requestId, pid, streamId, quality, mode, attempt) {
@@ -560,6 +704,7 @@
 
     try {
       applyTvLayout();
+      startGlobalHeartbeat();
       var component = findTvComponent();
       if (!component || !component.tabA || !component.tabB) {
         if (attempt < 40) {
@@ -660,6 +805,7 @@
   };
 
   function primeEarly() {
+    startGlobalHeartbeat();
     applyTvLayout();
     try { captureWebpackRequire(); } catch (e) {}
   }
@@ -669,5 +815,5 @@
     try { captureWebpackRequire(); clearInterval(poll); } catch (e) {}
   }, 100);
 
-  loadChannels();
+  setTimeout(loadChannels, 500);
 }());

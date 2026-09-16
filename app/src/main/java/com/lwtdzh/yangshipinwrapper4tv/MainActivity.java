@@ -297,6 +297,7 @@ public class MainActivity extends Activity {
         settings.setRenderPriority(WebSettings.RenderPriority.HIGH);
         settings.setBuiltInZoomControls(false);
         settings.setDisplayZoomControls(false);
+        settings.setUserAgentString("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
 
         if (lowMemoryDevice) {
             settings.setCacheMode(WebSettings.LOAD_NO_CACHE);
@@ -308,7 +309,16 @@ public class MainActivity extends Activity {
         bridgeWebView.setWebViewClient(new WebViewClient() {
             @Override
             public void onPageFinished(WebView view, String url) {
+                Log.i(TAG, "onPageFinished url=" + url + " progress=" + view.getProgress());
+                view.evaluateJavascript(
+                    "(function(){console.log('[YSP_PAGE] url='+location.href+' title='+document.title+' readyState='+document.readyState+' vue='+(document.querySelectorAll('[class*=__vue__]').length));})()",
+                    null);
                 scheduleBridgeInjection(80);
+            }
+            @Override
+            public boolean shouldOverrideUrlLoading(WebView view, String url) {
+                Log.i(TAG, "shouldOverrideUrlLoading url=" + url);
+                return false;
             }
         });
 
