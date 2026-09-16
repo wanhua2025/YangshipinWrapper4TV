@@ -53,6 +53,7 @@ public class MainActivity extends Activity {
     private static final String PREF_CHANNEL_PID = "channel_pid";
     private static final String PREF_PLAYBACK_MODE = "playback_mode";
     private static final String PREF_CHANNELS_JSON = "channels_json";
+    private static final String PREF_AUTO_START = "auto_start";
     private static final String PLAYBACK_MODE_DEFAULT = "default";
     private static final String PLAYBACK_MODE_HW = "hw";
     private static final String PLAYBACK_MODE_SW = "sw";
@@ -64,6 +65,10 @@ public class MainActivity extends Activity {
     private static final int MAIN_MENU_SETTINGS = 0;
     private static final int MAIN_MENU_CHANNELS = 1;
     private static final String[] MAIN_MENU_ITEMS = new String[]{"设置", "频道列表"};
+
+    private static final int SETTINGS_ITEM_PLAYBACK = 0;
+    private static final int SETTINGS_ITEM_AUTOSTART = 1;
+    private static final int SETTINGS_ITEM_COUNT = 2;
 
     private static final long JS_HEARTBEAT_TIMEOUT_MS = 6000;
     private static final long FIRST_FRAME_TIMEOUT_MS = 15000;
@@ -95,6 +100,7 @@ public class MainActivity extends Activity {
     private int bridgeAttempts = 0;
     private boolean channelsLoaded = false;
     private String playbackMode = PLAYBACK_MODE_DEFAULT;
+    private boolean autoStart = true;
     private boolean lowMemoryDevice = false;
     private int touchSlop;
     private final StringBuilder numberBuffer = new StringBuilder();
@@ -193,6 +199,7 @@ public class MainActivity extends Activity {
         if (!PLAYBACK_MODE_SW.equals(playbackMode) && !PLAYBACK_MODE_HW.equals(playbackMode)) {
             playbackMode = PLAYBACK_MODE_DEFAULT;
         }
+        autoStart = preferences.getBoolean(PREF_AUTO_START, true);
         if (lowMemoryDevice) {
             playbackMode = PLAYBACK_MODE_DEFAULT;
             Log.i(TAG, "low_memory_device=true forcing playback_mode=default");
@@ -793,8 +800,9 @@ public class MainActivity extends Activity {
             return;
         }
         if (menuPage == MENU_PAGE_SETTINGS) {
-            Log.i(TAG, "menu_move_settings");
-            channelListView.setSelection(0);
+            settingsSelection = (settingsSelection + delta + SETTINGS_ITEM_COUNT) % SETTINGS_ITEM_COUNT;
+            Log.i(TAG, "menu_move_settings idx=" + settingsSelection);
+            channelListView.setSelection(settingsSelection);
             channelAdapter.notifyDataSetChanged();
             return;
         }
@@ -820,6 +828,13 @@ public class MainActivity extends Activity {
         channelAdapter.notifyDataSetChanged();
     }
 
+    private void toggleAutoStart() {
+        autoStart = !autoStart;
+        preferences.edit().putBoolean(PREF_AUTO_START, autoStart).apply();
+        Log.i(TAG, "auto_start=" + autoStart);
+        channelAdapter.notifyDataSetChanged();
+    }
+
     private void selectMenuChannel() {
         if (channels.isEmpty()) return;
         currentIndex = menuSelection;
@@ -839,7 +854,11 @@ public class MainActivity extends Activity {
             return;
         }
         if (menuPage == MENU_PAGE_SETTINGS) {
-            cyclePlaybackMode();
+            if (settingsSelection == SETTINGS_ITEM_PLAYBACK) {
+                cyclePlaybackMode();
+            } else if (settingsSelection == SETTINGS_ITEM_AUTOSTART) {
+                toggleAutoStart();
+            }
             return;
         }
         if (position >= 0 && position < channels.size()) {
@@ -1136,13 +1155,13 @@ public class MainActivity extends Activity {
 
         @Override public int getCount() {
             if (menuPage == MENU_PAGE_MAIN) return MAIN_MENU_ITEMS.length;
-            if (menuPage == MENU_PAGE_SETTINGS) return 1;
+            if (menuPage == MENU_PAGE_SETTINGS) return SETTINGS_ITEM_COUNT;
             return channels.size();
         }
 
         @Override public Object getItem(int position) {
             if (menuPage == MENU_PAGE_MAIN) return MAIN_MENU_ITEMS[position];
-            if (menuPage == MENU_PAGE_SETTINGS) return playbackMode;
+            if (menuPage == MENU_PAGE_SETTINGS) return position;
             return channels.get(position);
         }
 
@@ -1168,7 +1187,11 @@ public class MainActivity extends Activity {
                 textView.setText(MAIN_MENU_ITEMS[position]);
                 selected = position == mainMenuSelection;
             } else if (menuPage == MENU_PAGE_SETTINGS) {
-                textView.setText("解码模式  " + playbackModeLabel());
+                if (position == SETTINGS_ITEM_PLAYBACK) {
+                    textView.setText("解码模式  " + playbackModeLabel());
+                } else if (position == SETTINGS_ITEM_AUTOSTART) {
+                    textView.setText("开机自启  " + (autoStart ? "开启" : "关闭"));
+                }
                 selected = position == settingsSelection;
             } else {
                 Channel channel = channels.get(position);
