@@ -350,6 +350,11 @@
     return videos.length > 0 ? videos[videos.length - 1] : null;
   }
 
+  function getLatestVideoElement() {
+    var videos = document.getElementsByTagName("video");
+    return videos.length > 0 ? videos[videos.length - 1] : null;
+  }
+
   function detectRealVideoFrame() {
     var video = getCurrentVideo();
     if (!video || !video.videoWidth || !video.videoHeight) {
@@ -651,74 +656,25 @@
   }
 
   function waitForVideoPlaying(requestId, pid, streamId, quality, maxWaitMs, oldVideo) {
-    maxWaitMs = maxWaitMs || 2500;
+    maxWaitMs = maxWaitMs || 5000;
     var deadline = Date.now() + maxWaitMs;
-    var video = getCurrentVideo();
-    var seenVideoFingerprint = oldVideo ? getVideoFingerprint(oldVideo) : "";
-    var gotNewVideo = oldVideo ? false : true;
 
     function done() { notifyPlayback(requestId, pid, streamId, quality); }
-
-    if (video && !oldVideo && !video.paused && video.readyState >= 2) {
-      done();
-      return;
-    }
-    if (oldVideo && video && video !== oldVideo && !video.paused && video.readyState >= 2) {
-      done();
-      return;
-    }
-
-    function onNewVideoReady() { cleanup(); done(); }
-    function onTimeout() { cleanup(); ensureVideoPlaying(null); done(); }
-    function cleanup() {
-      if (video) {
-        video.removeEventListener("playing", onNewVideoReady);
-        video.removeEventListener("canplay", onNewVideoReady);
-        video.removeEventListener("timeupdate", onNewVideoReady);
-      }
-    }
+    function onTimeout() { ensureVideoPlaying(null); done(); }
 
     var pollTimer = setInterval(function () {
-      var v = getCurrentVideo();
-      if (oldVideo) {
-        if (v && v !== oldVideo) {
-          if (!gotNewVideo) {
-            gotNewVideo = true;
-            if (seenVideoFingerprint) seenVideoFingerprint = "";
-          }
-          if (!v.paused && v.readyState >= 2) {
-            video = v;
-            clearInterval(pollTimer);
-            attachListeners();
-          } else {
-            video = v;
-          }
-        } else if (!v) {
-          if (seenVideoFingerprint) seenVideoFingerprint = "";
-        }
-      } else {
-        if (v && !v.paused && v.readyState >= 2) {
-          video = v;
-          clearInterval(pollTimer);
-          attachListeners();
-        } else if (v && !video) {
-          video = v;
-        }
+      var v = getLatestVideoElement();
+      if (!v) return;
+      if (!v.paused && v.readyState >= 2) {
+        clearInterval(pollTimer);
+        done();
+        return;
       }
       if (Date.now() >= deadline) {
         clearInterval(pollTimer);
         onTimeout();
       }
-    }, 40);
-
-    function attachListeners() {
-      if (!video) { onTimeout(); return; }
-      video.addEventListener("playing", onNewVideoReady, { once: true });
-      video.addEventListener("canplay", onNewVideoReady, { once: true });
-      video.addEventListener("timeupdate", onNewVideoReady, { once: true });
-      setTimeout(onTimeout, Math.max(0, deadline - Date.now()));
-      if (!video.paused && video.readyState >= 2) { cleanup(); done(); }
-    }
+    }, 15);
   }
 
   function getVideoFingerprint(v) {
@@ -862,12 +818,8 @@
       if (mode === "quality") {
         applyOfficialQuality(component, quality);
         lastPlaybackQuality = quality;
-        setTimeout(function () {
-          if (requestKey !== activePlaybackRequestId) return;
-          applyTvLayout();
-          waitForVideoPlaying(requestId, pid, streamId, quality, 2000);
-          channelChanging = false;
-        }, 40);
+        waitForVideoPlaying(requestId, pid, streamId, quality, 2000);
+        channelChanging = false;
         return;
       }
 
@@ -876,56 +828,33 @@
       var needChange = !isSameOfficialChannel(component, match.channel);
       var qualityNeedChange = quality && String(quality) !== "fhd" && String(quality) !== lastPlaybackQuality;
 
-      if (needChange && !qualityNeedChange) {
+      if (needChange) {
         _videoBeforeChange = getCurrentVideo();
+        if (_videoBeforeChange) { try { _videoBeforeChange.pause(); } catch (ignored) {} }
         component.changeTV(match.channel);
-        lastPlaybackQuality = "fhd";
-        setTimeout(function () {
-          if (requestKey !== activePlaybackRequestId) return;
-          applyTvLayout();
-          waitForVideoPlaying(requestId, pid, streamId, quality, 3000, _videoBeforeChange);
-          channelChanging = false;
-        }, 80);
-        return;
-      }
-
-      if (needChange && qualityNeedChange) {
-        _videoBeforeChange = getCurrentVideo();
-        component.changeTV(match.channel);
-        setTimeout(function () {
-          if (requestKey !== activePlaybackRequestId) return;
+        if (qualityNeedChange) {
           applyOfficialQuality(component, quality);
           lastPlaybackQuality = quality;
-          setTimeout(function () {
-            if (requestKey !== activePlaybackRequestId) return;
-            applyTvLayout();
-            waitForVideoPlaying(requestId, pid, streamId, quality, 3000, _videoBeforeChange);
-            channelChanging = false;
-          }, 80);
-        }, 80);
+        } else {
+          lastPlaybackQuality = "fhd";
+        }
+        waitForVideoPlaying(requestId, pid, streamId, quality || "fhd", 6000, _videoBeforeChange);
+        channelChanging = false;
         return;
       }
 
       if (!needChange && qualityNeedChange) {
         applyOfficialQuality(component, quality);
         lastPlaybackQuality = quality;
-        setTimeout(function () {
-          if (requestKey !== activePlaybackRequestId) return;
-          applyTvLayout();
-          waitForVideoPlaying(requestId, pid, streamId, quality, 2000);
-          channelChanging = false;
-        }, 40);
+        waitForVideoPlaying(requestId, pid, streamId, quality, 2000);
+        channelChanging = false;
         return;
       }
 
       if (!needChange && !qualityNeedChange) {
         ensureVideoPlaying(component);
-        setTimeout(function () {
-          if (requestKey !== activePlaybackRequestId) return;
-          applyTvLayout();
-          waitForVideoPlaying(requestId, pid, streamId, quality, 2000);
-          channelChanging = false;
-        }, 40);
+        waitForVideoPlaying(requestId, pid, streamId, quality, 2000);
+        channelChanging = false;
         return;
       }
     } catch (error) {
