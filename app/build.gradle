@@ -1,12 +1,14 @@
 apply plugin: "com.android.application"
 
 android {
-    compileSdkVersion 33
+    namespace "com.lwtdzh.yangshipinwrapper4tv"
+    compileSdkVersion 34
+    buildToolsVersion "34.0.0"
 
     defaultConfig {
         applicationId "com.lwtdzh.yangshipinwrapper4tv"
         minSdkVersion 19
-        targetSdkVersion 33
+        targetSdkVersion 34
         versionCode 1
         versionName "1.0"
     }
