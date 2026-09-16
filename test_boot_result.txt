@@ -1,0 +1,20 @@
+=== é‡å¯ adb server ===
+connected to 127.0.0.1:21503
+List of devices attached
+a257ac70	device
+127.0.0.1:21503	device
+
+
+=== Step1: æ¸?logcat ===
+=== Step2: å¯åŠ¨ App å†™é…ç½?===
+Starting: Intent { cmp=com.lwtdzh.yangshipinwrapper4tv/.MainActivity }
+=== Step3: force-stop ===
+=== Step4: ç¡®è®¤è¿›ç¨‹æ²¡äº† ===
+=== Step5: æ¸?logcat + å?BOOT_COMPLETED ===
+Broadcasting: Intent { act=android.intent.action.BOOT_COMPLETED }
+Broadcast completed: result=-1
+=== Step6: ç­?8 ç§?===
+=== Step7: æ£€æŸ¥è¿›ç¨?===
+=== Step8: æ£€æŸ?Top Activity ===
+=== Step9: YSPTV æ—¥å¿— ===
+ÖÕÖ¹Åú´¦Àí²Ù×÷Âğ(Y/N)? 

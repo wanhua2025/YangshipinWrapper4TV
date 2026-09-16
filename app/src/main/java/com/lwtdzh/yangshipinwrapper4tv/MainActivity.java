@@ -96,7 +96,7 @@ public class MainActivity extends Activity {
     private int menuSelection = 0;
     private int mainMenuSelection = MAIN_MENU_CHANNELS;
     private int settingsSelection = 0;
-    private int menuPage = MENU_PAGE_CHANNELS;
+    private int menuPage = MENU_PAGE_MAIN;
     private int bridgeAttempts = 0;
     private boolean channelsLoaded = false;
     private String playbackMode = PLAYBACK_MODE_DEFAULT;
@@ -745,7 +745,7 @@ public class MainActivity extends Activity {
             showOverlay("频道列表仍在加载中", true);
             return;
         }
-        showChannelsMenu();
+        showMainMenu(MAIN_MENU_CHANNELS);
     }
 
     private void showMainMenu(int selectedItem) {
