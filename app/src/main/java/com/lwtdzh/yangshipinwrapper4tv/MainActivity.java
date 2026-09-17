@@ -68,6 +68,7 @@ public class MainActivity extends Activity {
     private static final long FIRST_FRAME_TIMEOUT_MS = 15000;
     private static final long OVERLAY_HIDE_AFTER_FIRST_FRAME_MS = 2000;
     private static final int MAX_RECOVERY_LEVEL = 4;
+    private static final long MENU_AUTO_HIDE_MS = 3000;
 
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final List<Channel> channels = new ArrayList<Channel>();
@@ -170,6 +171,16 @@ public class MainActivity extends Activity {
                 }
             }
             handler.postDelayed(jsHeartbeatMonitorRunnable, 2500);
+        }
+    };
+
+    private final Runnable menuAutoHideRunnable = new Runnable() {
+        @Override
+        public void run() {
+            if (menuPanel.getVisibility() == View.VISIBLE) {
+                Log.i(TAG, "menu_auto_hide");
+                hideMenu();
+            }
         }
     };
 
@@ -821,6 +832,7 @@ public class MainActivity extends Activity {
         channelAdapter.notifyDataSetChanged();
         Log.i(TAG, "menu_channels");
         menuPanel.setVisibility(View.VISIBLE);
+        scheduleMenuAutoHide();
     }
 
     private void showSettingsMenu() {
@@ -831,9 +843,11 @@ public class MainActivity extends Activity {
         channelAdapter.notifyDataSetChanged();
         Log.i(TAG, "menu_settings mode=" + playbackMode);
         menuPanel.setVisibility(View.VISIBLE);
+        scheduleMenuAutoHide();
     }
 
     private void hideMenu() {
+        cancelMenuAutoHide();
         menuPanel.setVisibility(View.GONE);
         Log.i(TAG, "menu_hide");
         hideSystemUi();
@@ -847,6 +861,7 @@ public class MainActivity extends Activity {
     }
 
     private void moveMenuSelection(int delta) {
+        scheduleMenuAutoHide();
         if (menuPage == MENU_PAGE_SETTINGS) {
             settingsSelection = (settingsSelection + delta + SETTINGS_ITEMS.length) % SETTINGS_ITEMS.length;
             Log.i(TAG, "menu_move_settings idx=" + settingsSelection);
@@ -916,19 +931,25 @@ public class MainActivity extends Activity {
     }
 
     private void commitNumberInput() {
-        if (numberBuffer.length() == 0 || channels.isEmpty()) return;
+        if (numberBuffer.length() == 0) return;
         try {
             int oneBased = Integer.parseInt(numberBuffer.toString());
             numberBuffer.setLength(0);
-            if (oneBased >= 1 && oneBased <= channels.size()) {
-                currentIndex = oneBased - 1;
-                menuSelection = currentIndex;
-                channelAdapter.notifyDataSetChanged();
-                channelListView.setSelection(currentIndex);
-                requestCurrentStream();
-            } else {
-                showOverlay("频道 " + oneBased + " 超出范围", true);
+            handler.removeCallbacks(numberCommitRunnable);
+            if (!channelsLoaded || channels.isEmpty()) {
+                showOverlay("频道列表还在加载中", true);
+                return;
             }
+            if (oneBased < 1 || oneBased > channels.size()) {
+                showOverlay("频道 " + oneBased + " 不存在 (1-" + channels.size() + ")", true);
+                return;
+            }
+            currentIndex = oneBased - 1;
+            menuSelection = currentIndex;
+            channelAdapter.notifyDataSetChanged();
+            channelListView.setSelection(currentIndex);
+            hideMenu();
+            requestCurrentStream();
         } catch (NumberFormatException ignored) { numberBuffer.setLength(0); }
     }
 
@@ -936,24 +957,22 @@ public class MainActivity extends Activity {
     public boolean dispatchKeyEvent(KeyEvent event) {
         if (event.getAction() != KeyEvent.ACTION_DOWN) return true;
         int keyCode = event.getKeyCode();
-        Log.i(TAG, "key_down code=" + keyCode);
-        if (keyCode >= KeyEvent.KEYCODE_0 && keyCode <= KeyEvent.KEYCODE_9) {
-            appendNumber(keyCode - KeyEvent.KEYCODE_0);
+        int repeatCount = event.getRepeatCount();
+        Log.i(TAG, "key_down code=" + keyCode + " repeat=" + repeatCount);
+
+        int digit = digitFromKeyCode(keyCode);
+        if (digit >= 0) {
+            if (repeatCount == 0) appendNumber(digit);
             return true;
         }
-        if (keyCode == KeyEvent.KEYCODE_SETTINGS) {
-            showSettingsMenu();
-            return true;
-        }
-        if (menuPanel.getVisibility() == View.VISIBLE) {
-            if (keyCode == KeyEvent.KEYCODE_DPAD_UP) { moveMenuSelection(-1); return true; }
-            if (keyCode == KeyEvent.KEYCODE_DPAD_DOWN) { moveMenuSelection(1); return true; }
-            if (keyCode == KeyEvent.KEYCODE_DPAD_LEFT) { hideMenu(); return true; }
-            if (keyCode == KeyEvent.KEYCODE_DPAD_RIGHT) {
-                if (menuPage == MENU_PAGE_SETTINGS) { cyclePlaybackMode(); hideMenu(); }
+
+        if (isOkKey(keyCode)) {
+            if (numberBuffer.length() > 0) {
+                commitNumberInput();
                 return true;
             }
-            if (isOkKey(keyCode)) {
+            cancelNumberInput();
+            if (menuPanel.getVisibility() == View.VISIBLE) {
                 if (menuPage == MENU_PAGE_SETTINGS) {
                     if (settingsSelection == 0) cyclePlaybackMode();
                     else if (settingsSelection == 1) toggleAutoStart();
@@ -964,21 +983,42 @@ public class MainActivity extends Activity {
                 }
                 return true;
             }
+            showChannelsMenu();
+            return true;
+        }
+
+        if (keyCode == KeyEvent.KEYCODE_SETTINGS) {
+            cancelNumberInput();
+            showSettingsMenu();
+            return true;
+        }
+
+        if (menuPanel.getVisibility() == View.VISIBLE) {
+            if (keyCode == KeyEvent.KEYCODE_DPAD_UP) { cancelNumberInput(); moveMenuSelection(-1); return true; }
+            if (keyCode == KeyEvent.KEYCODE_DPAD_DOWN) { cancelNumberInput(); moveMenuSelection(1); return true; }
+            if (keyCode == KeyEvent.KEYCODE_DPAD_LEFT) { cancelNumberInput(); hideMenu(); return true; }
+            if (keyCode == KeyEvent.KEYCODE_DPAD_RIGHT) {
+                cancelNumberInput();
+                if (menuPage == MENU_PAGE_SETTINGS) { cyclePlaybackMode(); hideMenu(); }
+                return true;
+            }
             if (keyCode == KeyEvent.KEYCODE_BACK) {
+                cancelNumberInput();
                 if (menuPage == MENU_PAGE_SETTINGS) showChannelsMenu();
                 else hideMenu();
                 return true;
             }
+            if (keyCode == KeyEvent.KEYCODE_MENU) { cancelNumberInput(); return true; }
+            cancelNumberInput();
             return true;
         }
+
+        cancelNumberInput();
         if (keyCode == KeyEvent.KEYCODE_DPAD_UP) { changeChannel(-1); return true; }
         if (keyCode == KeyEvent.KEYCODE_DPAD_DOWN) { changeChannel(1); return true; }
-        if (keyCode == KeyEvent.KEYCODE_DPAD_LEFT) {
-            showChannelsMenu();
-            return true;
-        }
+        if (keyCode == KeyEvent.KEYCODE_DPAD_LEFT) { showChannelsMenu(); return true; }
         if (keyCode == KeyEvent.KEYCODE_DPAD_RIGHT) { changeQuality(1); return true; }
-        if (isOkKey(keyCode) || keyCode == KeyEvent.KEYCODE_MENU) { showChannelsMenu(); return true; }
+        if (keyCode == KeyEvent.KEYCODE_MENU) { showChannelsMenu(); return true; }
         if (keyCode == KeyEvent.KEYCODE_BACK) { finish(); return true; }
         return super.dispatchKeyEvent(event);
     }
@@ -987,6 +1027,33 @@ public class MainActivity extends Activity {
         return keyCode == KeyEvent.KEYCODE_DPAD_CENTER
                 || keyCode == KeyEvent.KEYCODE_ENTER
                 || keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER;
+    }
+
+    private int digitFromKeyCode(int keyCode) {
+        if (keyCode >= KeyEvent.KEYCODE_0 && keyCode <= KeyEvent.KEYCODE_9) {
+            return keyCode - KeyEvent.KEYCODE_0;
+        }
+        if (keyCode >= KeyEvent.KEYCODE_NUMPAD_0 && keyCode <= KeyEvent.KEYCODE_NUMPAD_9) {
+            return keyCode - KeyEvent.KEYCODE_NUMPAD_0;
+        }
+        return -1;
+    }
+
+    private void cancelNumberInput() {
+        if (numberBuffer.length() > 0) {
+            numberBuffer.setLength(0);
+            handler.removeCallbacks(numberCommitRunnable);
+            Log.i(TAG, "number_input_cancelled");
+        }
+    }
+
+    private void scheduleMenuAutoHide() {
+        handler.removeCallbacks(menuAutoHideRunnable);
+        handler.postDelayed(menuAutoHideRunnable, MENU_AUTO_HIDE_MS);
+    }
+
+    private void cancelMenuAutoHide() {
+        handler.removeCallbacks(menuAutoHideRunnable);
     }
 
     private void handleTouchTap(float x, float y) {
@@ -1297,6 +1364,10 @@ public class MainActivity extends Activity {
                     moved = false;
                     path.reset();
                     path.moveTo(x, y);
+                    if (menuPanel.getVisibility() == View.VISIBLE) {
+                        scheduleMenuAutoHide();
+                        cancelNumberInput();
+                    }
                     invalidate();
                     return true;
                 case MotionEvent.ACTION_MOVE:
@@ -1307,6 +1378,7 @@ public class MainActivity extends Activity {
                         moved = true;
                     }
                     if (menuPanel.getVisibility() == View.VISIBLE && downInMenu) {
+                        scheduleMenuAutoHide();
                         float stepDy = y - lastY;
                         if (Math.abs(stepDy) >= 1f) {
                             channelListView.smoothScrollBy((int) -stepDy, 0);
