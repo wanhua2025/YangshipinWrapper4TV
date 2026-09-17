@@ -58,14 +58,11 @@ public class MainActivity extends Activity {
     private static final String PLAYBACK_MODE_HW = "hw";
     private static final String PLAYBACK_MODE_SW = "sw";
     private static final String[] QUALITY_ORDER = new String[]{"hd", "shd", "fhd"};
-    private static final String PLAYBACK_HELP_TEXT = "上下换台 · OK打开频道列表 · 左右切清晰度";
+    private static final String PLAYBACK_HELP_TEXT = "上下换台 · 左开菜单 · 右切清晰度 · OK确定";
     private static final String[] SETTINGS_ITEMS = new String[]{"解码模式", "开机自启"};
-    private static final int MENU_PAGE_MAIN = 0;
-    private static final int MENU_PAGE_CHANNELS = 1;
-    private static final int MENU_PAGE_SETTINGS = 2;
-    private static final int MAIN_MENU_SETTINGS = 0;
-    private static final int MAIN_MENU_CHANNELS = 1;
-    private static final String[] MAIN_MENU_ITEMS = new String[]{"设置", "频道列表"};
+    private static final int MENU_PAGE_CHANNELS = 0;
+    private static final int MENU_PAGE_SETTINGS = 1;
+    private static final int MENU_SELECTION_SETTINGS = 0;
 
     private static final long JS_HEARTBEAT_TIMEOUT_MS = 6000;
     private static final long FIRST_FRAME_TIMEOUT_MS = 15000;
@@ -90,8 +87,7 @@ public class MainActivity extends Activity {
     private String activeRequestId = "";
     private int requestCounter = 0;
     private int currentIndex = 0;
-    private int menuSelection = 0;
-    private int mainMenuSelection = MAIN_MENU_CHANNELS;
+    private int menuSelection = 1;
     private int settingsSelection = 0;
     private int menuPage = MENU_PAGE_CHANNELS;
     private int bridgeAttempts = 0;
@@ -732,6 +728,49 @@ public class MainActivity extends Activity {
         return "默认推荐";
     }
 
+    private static final java.util.Map<String, String> CCTV_GENRE = new java.util.HashMap<String, String>();
+    static {
+        CCTV_GENRE.put("CCTV-1", "综合");
+        CCTV_GENRE.put("CCTV-2", "财经");
+        CCTV_GENRE.put("CCTV-3", "综艺");
+        CCTV_GENRE.put("CCTV-4", "中文国际");
+        CCTV_GENRE.put("CCTV-5", "体育");
+        CCTV_GENRE.put("CCTV-5+", "体育赛事");
+        CCTV_GENRE.put("CCTV-6", "电影");
+        CCTV_GENRE.put("CCTV-7", "国防军事");
+        CCTV_GENRE.put("CCTV-8", "电视剧");
+        CCTV_GENRE.put("CCTV-9", "纪录");
+        CCTV_GENRE.put("CCTV-10", "科教");
+        CCTV_GENRE.put("CCTV-11", "戏曲");
+        CCTV_GENRE.put("CCTV-12", "社会与法");
+        CCTV_GENRE.put("CCTV-13", "新闻");
+        CCTV_GENRE.put("CCTV-14", "少儿");
+        CCTV_GENRE.put("CCTV-15", "音乐");
+        CCTV_GENRE.put("CCTV-16", "奥林匹克");
+        CCTV_GENRE.put("CCTV-17", "农业农村");
+    }
+
+    private String formatChannelDisplayName(Channel ch) {
+        if (ch == null) return "";
+        String raw = ch.name == null ? "" : ch.name.trim();
+        if (raw.isEmpty()) return raw;
+        String key = raw.toUpperCase();
+        if (key.startsWith("CCTV")) {
+            String numPart = raw.substring(4);
+            if (numPart.contains("4K")) return "CCTV-4K 4K超高清";
+            if (numPart.contains("8K")) return "CCTV-8K 8K超高清";
+            if (numPart.matches("\\d+\\+?")) {
+                String dashed = "CCTV-" + numPart;
+                String genre = CCTV_GENRE.get(dashed);
+                if (genre != null) return dashed + " " + genre;
+                return dashed;
+            }
+            return raw;
+        }
+        if (key.startsWith("CGTN")) return raw;
+        return raw;
+    }
+
     private void updateStatus() {
         String channelName = channels.isEmpty() ? "" : channels.get(currentIndex).name;
         statusText.setText(qualityLabel(preferredQuality) + (channelName.length() > 0 ? "  " + channelName : ""));
@@ -768,30 +807,15 @@ public class MainActivity extends Activity {
     }
 
     private void toggleMenu() {
-        if (menuPanel.getVisibility() == View.VISIBLE) return;
-        showMenu();
-    }
-
-    private void showMenu() {
-        if (channels.isEmpty()) {
-            showOverlay("频道列表仍在加载中", true);
-            return;
-        }
-        showChannelsMenu();
-    }
-
-    private void showMainMenu(int selectedItem) {
-        menuPage = MENU_PAGE_MAIN;
-        mainMenuSelection = selectedItem;
-        updateMenuHeader();
-        channelListView.setSelection(mainMenuSelection);
-        channelAdapter.notifyDataSetChanged();
-        menuPanel.setVisibility(View.VISIBLE);
+        if (menuPanel.getVisibility() == View.VISIBLE) hideMenu();
+        else showChannelsMenu();
     }
 
     private void showChannelsMenu() {
         menuPage = MENU_PAGE_CHANNELS;
-        menuSelection = currentIndex;
+        menuSelection = currentIndex + 1;
+        if (menuSelection < 1) menuSelection = 1;
+        if (menuSelection > channels.size()) menuSelection = 1;
         updateMenuHeader();
         channelListView.setSelection(menuSelection);
         channelAdapter.notifyDataSetChanged();
@@ -817,20 +841,12 @@ public class MainActivity extends Activity {
 
     private void updateMenuHeader() {
         if (menuHeader != null) {
-            if (menuPage == MENU_PAGE_MAIN) menuHeader.setText("菜单");
-            else if (menuPage == MENU_PAGE_SETTINGS) menuHeader.setText("设置");
+            if (menuPage == MENU_PAGE_SETTINGS) menuHeader.setText("设置");
             else menuHeader.setText("频道列表  " + (channels.isEmpty() ? "0" : String.valueOf(channels.size())));
         }
     }
 
     private void moveMenuSelection(int delta) {
-        if (menuPage == MENU_PAGE_MAIN) {
-            mainMenuSelection = (mainMenuSelection + delta + MAIN_MENU_ITEMS.length) % MAIN_MENU_ITEMS.length;
-            Log.i(TAG, "menu_move_main idx=" + mainMenuSelection);
-            channelListView.setSelection(mainMenuSelection);
-            channelAdapter.notifyDataSetChanged();
-            return;
-        }
         if (menuPage == MENU_PAGE_SETTINGS) {
             settingsSelection = (settingsSelection + delta + SETTINGS_ITEMS.length) % SETTINGS_ITEMS.length;
             Log.i(TAG, "menu_move_settings idx=" + settingsSelection);
@@ -839,15 +855,16 @@ public class MainActivity extends Activity {
             return;
         }
         if (channels.isEmpty()) return;
-        menuSelection = (menuSelection + delta + channels.size()) % channels.size();
-        Log.i(TAG, "menu_move_channels idx=" + menuSelection + " name=" + channels.get(menuSelection).name);
+        int total = channels.size() + 1;
+        menuSelection = (menuSelection + delta + total) % total;
+        if (menuSelection == MENU_SELECTION_SETTINGS) {
+            Log.i(TAG, "menu_move -> 设置");
+        } else {
+            int chIdx = menuSelection - 1;
+            Log.i(TAG, "menu_move_channels idx=" + chIdx + " name=" + channels.get(chIdx).name);
+        }
         channelListView.setSelection(menuSelection);
         channelAdapter.notifyDataSetChanged();
-    }
-
-    private void enterMainMenuSelection() {
-        if (mainMenuSelection == MAIN_MENU_SETTINGS) showSettingsMenu();
-        else showChannelsMenu();
     }
 
     private void cyclePlaybackMode() {
@@ -869,28 +886,22 @@ public class MainActivity extends Activity {
 
     private void selectMenuChannel() {
         if (channels.isEmpty()) return;
-        currentIndex = menuSelection;
+        currentIndex = menuSelection - 1;
+        if (currentIndex < 0) currentIndex = 0;
         Log.i(TAG, "menu_select idx=" + currentIndex + " name=" + channels.get(currentIndex).name);
-        channelListView.setSelection(currentIndex);
-        channelAdapter.notifyDataSetChanged();
         hideMenu();
         requestCurrentStream();
     }
 
     private void selectMenuItemAt(int position) {
-        if (menuPage == MENU_PAGE_MAIN) {
-            if (position >= 0 && position < MAIN_MENU_ITEMS.length) {
-                mainMenuSelection = position;
-                enterMainMenuSelection();
-            }
-            return;
-        }
         if (menuPage == MENU_PAGE_SETTINGS) {
             if (position == 0) cyclePlaybackMode();
             else if (position == 1) toggleAutoStart();
             return;
         }
-        if (position >= 0 && position < channels.size()) {
+        if (position == MENU_SELECTION_SETTINGS) {
+            showSettingsMenu();
+        } else if (position >= 1 && position <= channels.size()) {
             menuSelection = position;
             selectMenuChannel();
         }
@@ -930,38 +941,44 @@ public class MainActivity extends Activity {
             appendNumber(keyCode - KeyEvent.KEYCODE_0);
             return true;
         }
+        if (keyCode == KeyEvent.KEYCODE_SETTINGS) {
+            showSettingsMenu();
+            return true;
+        }
         if (menuPanel.getVisibility() == View.VISIBLE) {
             if (keyCode == KeyEvent.KEYCODE_DPAD_UP) { moveMenuSelection(-1); return true; }
             if (keyCode == KeyEvent.KEYCODE_DPAD_DOWN) { moveMenuSelection(1); return true; }
-            if (keyCode == KeyEvent.KEYCODE_DPAD_LEFT) {
-                if (menuPage == MENU_PAGE_CHANNELS || menuPage == MENU_PAGE_SETTINGS) {
-                    showMainMenu(menuPage == MENU_PAGE_SETTINGS ? MAIN_MENU_SETTINGS : MAIN_MENU_CHANNELS);
-                }
-                return true;
-            }
+            if (keyCode == KeyEvent.KEYCODE_DPAD_LEFT) { hideMenu(); return true; }
             if (keyCode == KeyEvent.KEYCODE_DPAD_RIGHT) {
-                if (menuPage == MENU_PAGE_MAIN) enterMainMenuSelection();
-                else if (menuPage == MENU_PAGE_SETTINGS) { cyclePlaybackMode(); hideMenu(); }
+                if (menuPage == MENU_PAGE_SETTINGS) { cyclePlaybackMode(); hideMenu(); }
                 return true;
             }
             if (isOkKey(keyCode)) {
-                if (menuPage == MENU_PAGE_MAIN) enterMainMenuSelection();
-                else if (menuPage == MENU_PAGE_SETTINGS) { cyclePlaybackMode(); hideMenu(); }
-                else selectMenuChannel();
+                if (menuPage == MENU_PAGE_SETTINGS) {
+                    if (settingsSelection == 0) cyclePlaybackMode();
+                    else if (settingsSelection == 1) toggleAutoStart();
+                    hideMenu();
+                } else {
+                    if (menuSelection == MENU_SELECTION_SETTINGS) showSettingsMenu();
+                    else selectMenuChannel();
+                }
                 return true;
             }
             if (keyCode == KeyEvent.KEYCODE_BACK) {
-                if (menuPage == MENU_PAGE_MAIN) hideMenu();
-                else showMainMenu(menuPage == MENU_PAGE_SETTINGS ? MAIN_MENU_SETTINGS : MAIN_MENU_CHANNELS);
+                if (menuPage == MENU_PAGE_SETTINGS) showChannelsMenu();
+                else hideMenu();
                 return true;
             }
             return true;
         }
         if (keyCode == KeyEvent.KEYCODE_DPAD_UP) { changeChannel(-1); return true; }
         if (keyCode == KeyEvent.KEYCODE_DPAD_DOWN) { changeChannel(1); return true; }
-        if (keyCode == KeyEvent.KEYCODE_DPAD_LEFT) { changeQuality(-1); return true; }
+        if (keyCode == KeyEvent.KEYCODE_DPAD_LEFT) {
+            showChannelsMenu();
+            return true;
+        }
         if (keyCode == KeyEvent.KEYCODE_DPAD_RIGHT) { changeQuality(1); return true; }
-        if (isOkKey(keyCode) || keyCode == KeyEvent.KEYCODE_MENU) { toggleMenu(); return true; }
+        if (isOkKey(keyCode) || keyCode == KeyEvent.KEYCODE_MENU) { showChannelsMenu(); return true; }
         if (keyCode == KeyEvent.KEYCODE_BACK) { finish(); return true; }
         return super.dispatchKeyEvent(event);
     }
@@ -1014,18 +1031,16 @@ public class MainActivity extends Activity {
     private void handleMenuHorizontalSwipe(float dx) {
         if (dx < 0) {
             Log.i(TAG, "touch_menu_swipe_left");
-            if (menuPage == MENU_PAGE_CHANNELS) {
-                showMainMenu(MAIN_MENU_CHANNELS);
-            } else if (menuPage == MENU_PAGE_SETTINGS) {
-                showMainMenu(MAIN_MENU_SETTINGS);
+            if (menuPage == MENU_PAGE_CHANNELS && menuSelection == MENU_SELECTION_SETTINGS) {
+                showSettingsMenu();
             }
             return;
         }
         Log.i(TAG, "touch_menu_swipe_right");
-        if (menuPage == MENU_PAGE_MAIN) {
-            enterMainMenuSelection();
-        } else if (menuPage == MENU_PAGE_SETTINGS) {
-            cyclePlaybackMode();
+        if (menuPage == MENU_PAGE_SETTINGS) {
+            showChannelsMenu();
+        } else if (menuPage == MENU_PAGE_CHANNELS) {
+            changeQuality(1);
         }
     }
 
@@ -1183,15 +1198,14 @@ public class MainActivity extends Activity {
         ChannelAdapter(Context context) { this.context = context; }
 
         @Override public int getCount() {
-            if (menuPage == MENU_PAGE_MAIN) return MAIN_MENU_ITEMS.length;
             if (menuPage == MENU_PAGE_SETTINGS) return SETTINGS_ITEMS.length;
-            return channels.size();
+            return channels.size() + 1;
         }
 
         @Override public Object getItem(int position) {
-            if (menuPage == MENU_PAGE_MAIN) return MAIN_MENU_ITEMS[position];
             if (menuPage == MENU_PAGE_SETTINGS) return SETTINGS_ITEMS[position];
-            return channels.get(position);
+            if (position == MENU_SELECTION_SETTINGS) return "设置";
+            return channels.get(position - 1);
         }
 
         @Override public long getItemId(int position) { return position; }
@@ -1212,22 +1226,23 @@ public class MainActivity extends Activity {
                         ViewGroup.LayoutParams.MATCH_PARENT, dp(54)));
             }
             boolean selected;
-            if (menuPage == MENU_PAGE_MAIN) {
-                textView.setText(MAIN_MENU_ITEMS[position]);
-                selected = position == mainMenuSelection;
-            } else if (menuPage == MENU_PAGE_SETTINGS) {
+            if (menuPage == MENU_PAGE_SETTINGS) {
                 if (position == 0) textView.setText("解码模式  " + playbackModeLabel());
                 else if (position == 1) textView.setText("开机自启  " + (autoStartOnBoot ? "开" : "关"));
                 else textView.setText(SETTINGS_ITEMS[position]);
                 selected = position == settingsSelection;
             } else {
-                Channel channel = channels.get(position);
-                String typeLabel = "weishi".equals(channel.type) ? "卫视" : "央视";
-                textView.setText(String.valueOf(position + 1) + ". " + channel.name + "  " + typeLabel);
-                selected = position == menuSelection;
+                if (position == MENU_SELECTION_SETTINGS) {
+                    textView.setText("⚙ 设置");
+                    selected = menuSelection == MENU_SELECTION_SETTINGS;
+                } else {
+                    Channel channel = channels.get(position - 1);
+                    textView.setText(String.valueOf(position) + ". " + formatChannelDisplayName(channel));
+                    selected = position == menuSelection;
+                }
             }
             if (selected) textView.setBackgroundColor(0xFF1D6FFF);
-            else if (menuPage == MENU_PAGE_CHANNELS && position == currentIndex) textView.setBackgroundColor(0x66333333);
+            else if (menuPage == MENU_PAGE_CHANNELS && position > 0 && (position - 1) == currentIndex) textView.setBackgroundColor(0x66333333);
             else textView.setBackgroundColor(Color.TRANSPARENT);
             return textView;
         }
