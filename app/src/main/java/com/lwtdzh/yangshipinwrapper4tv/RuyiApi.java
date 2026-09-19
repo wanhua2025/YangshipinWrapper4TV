@@ -15,7 +15,7 @@ import java.util.List;
 
 public class RuyiApi {
     private static final String TAG = "RUYI";
-    private static final String BASE_URL = "http://ry.400239.com";
+    public static final String BASE_URL = "http://ry.400239.com";
     private static final String API_PATH = "/api.php";
     private static final int APPID = 10000;
     private static final String APPKEY = "4d86cdb33aa6f9dd27c4e6adee49995e";
@@ -314,6 +314,199 @@ public class RuyiApi {
         }).start();
     }
 
+    public interface ProductsCallback {
+        void onProductsResult(List<ProductInfo> products);
+    }
+
+    public static class ProductInfo {
+        public String gid;
+        public String id;
+        public String name;
+        public String price;
+        public String gtype;
+        public String obtain;
+        public String duration;
+        public boolean payAliEnabled;
+        public boolean payWxEnabled;
+
+        public ProductInfo(String gid, String name, String price, String gtype, String obtain, boolean payAliEnabled, boolean payWxEnabled) {
+            this.gid = gid;
+            this.id = gid;
+            this.name = name;
+            this.price = price;
+            this.gtype = gtype;
+            this.obtain = obtain;
+            this.duration = formatDuration(obtain);
+            this.payAliEnabled = payAliEnabled;
+            this.payWxEnabled = payWxEnabled;
+        }
+
+        private static String formatDuration(String obtain) {
+            if (obtain == null) return "";
+            try {
+                int days = Integer.parseInt(obtain.trim());
+                if (days >= 9999) return "终身";
+                if (days >= 365) return (days / 365) + "年";
+                if (days >= 30) return (days / 30) + "个月";
+                return days + "天";
+            } catch (NumberFormatException e) {
+                return obtain;
+            }
+        }
+    }
+
+    public interface PayCallback {
+        void onPayCreated(String qrUrl, String orderNo);
+        void onPayError(int code, String msg);
+    }
+
+    public interface PayQueryCallback {
+        void onPayState(int state, String msg);
+    }
+
+    public void fetchProducts(final ProductsCallback cb) {
+        android.os.AsyncTask.execute(new Runnable() {
+            @Override
+            public void run() {
+                List<ProductInfo> list = new ArrayList<ProductInfo>();
+                try {
+                    long t = System.currentTimeMillis() / 1000L;
+                    List<Param> params = new ArrayList<Param>();
+                    params.add(new Param("t", String.valueOf(t)));
+                    if (token != null) params.add(new Param("token", token));
+                    ApiResp resp = callApi("goods", params);
+                    Log.d(TAG, "fetchProducts code=" + resp.code);
+                    if (resp.code == 200) {
+                        String decrypted = "";
+                        try { decrypted = miRc4Decrypt(resp.msg); } catch (Exception e) { decrypted = resp.msg; }
+                        Log.d(TAG, "fetchProducts decrypted=" + decrypted);
+                        org.json.JSONArray arr;
+                        if (decrypted.startsWith("[")) {
+                            arr = new org.json.JSONArray(decrypted);
+                        } else {
+                            JSONObject json = new JSONObject(decrypted);
+                            arr = json.optJSONArray("list");
+                            if (arr == null) arr = json.optJSONArray("goods");
+                        }
+                        if (arr != null) {
+                            for (int i = 0; i < arr.length(); i++) {
+                                JSONObject g = arr.getJSONObject(i);
+                                list.add(new ProductInfo(
+                                        g.optString("gid", String.valueOf(i + 1)),
+                                        g.optString("gname", "套餐" + (i + 1)),
+                                        g.optString("gmoney", "0"),
+                                        g.optString("gtype", "vip"),
+                                        g.optString("obtain", ""),
+                                        "y".equals(g.optString("pay_ali_state", "n")),
+                                        "y".equals(g.optString("pay_wx_state", "n"))
+                                ));
+                            }
+                        }
+                    }
+                } catch (Exception e) {
+                    Log.w(TAG, "fetchProducts error: " + e.getMessage());
+                }
+                if (list.isEmpty()) {
+                    list.add(new ProductInfo("1", "月卡会员", "25", "vip", "30天", true, true));
+                    list.add(new ProductInfo("2", "季卡会员", "65", "vip", "90天", true, true));
+                    list.add(new ProductInfo("3", "年卡会员", "220", "vip", "365天", true, true));
+                    list.add(new ProductInfo("4", "永久会员", "599", "vip", "终身", true, true));
+                }
+                cb.onProductsResult(list);
+            }
+        });
+    }
+
+    public void createPayOrder(final ProductInfo product, final String payWay, final PayCallback cb) {
+        android.os.AsyncTask.execute(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    if (token == null) {
+                        cb.onPayError(-1, "未登录");
+                        return;
+                    }
+                    String orderNo = String.valueOf(System.currentTimeMillis());
+                    orderNo += String.format("%05d", (int)(Math.random() * 99999));
+                    long t = System.currentTimeMillis() / 1000L;
+                    List<Param> params = new ArrayList<Param>();
+                    params.add(new Param("t", String.valueOf(t)));
+                    params.add(new Param("token", token));
+                    params.add(new Param("order", orderNo));
+                    params.add(new Param("account", username != null ? username : ""));
+                    params.add(new Param("way", payWay));
+                    params.add(new Param("gid", product.gid));
+                    params.add(new Param("ua", "2"));
+                    ApiResp resp = callApi("pay", params);
+                    Log.d(TAG, "createPayOrder code=" + resp.code + " full=" + resp.fullJson);
+                    if (resp.code == 200) {
+                        String qrUrl = resp.fullJson.optString("qr_url", "");
+                        String order = resp.fullJson.optString("order", orderNo);
+                        if (qrUrl.isEmpty() && resp.msg != null && resp.msg.contains("qr_url")) {
+                            try {
+                                JSONObject dec = new JSONObject(miRc4Decrypt(resp.msg));
+                                qrUrl = dec.optString("qr_url", "");
+                                order = dec.optString("order", orderNo);
+                            } catch (Exception ignored) {}
+                        }
+                        cb.onPayCreated(qrUrl, order);
+                    } else {
+                        String decMsg = resp.msg;
+                        try { decMsg = miRc4Decrypt(resp.msg); } catch (Exception ignored) {}
+                        cb.onPayError(resp.code, decMsg != null ? decMsg : resp.msg);
+                    }
+                } catch (Exception e) {
+                    Log.e(TAG, "createPayOrder error", e);
+                    cb.onPayError(-1, "网络错误: " + e.getMessage());
+                }
+            }
+        });
+    }
+
+    public void queryPayResult(final String orderNo, final PayQueryCallback cb) {
+        android.os.AsyncTask.execute(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    if (token == null) {
+                        cb.onPayState(-1, "未登录");
+                        return;
+                    }
+                    long t = System.currentTimeMillis() / 1000L;
+                    List<Param> params = new ArrayList<Param>();
+                    params.add(new Param("t", String.valueOf(t)));
+                    params.add(new Param("token", token));
+                    params.add(new Param("oid", orderNo));
+                    ApiResp resp = callApi("pay_res", params);
+                    int state = -1;
+                    String msg = resp.msg;
+                    if (resp.code == 200) {
+                        state = 2;
+                        msg = "支付成功";
+                    } else if (resp.code == 154) {
+                        state = 0;
+                        msg = "等待支付";
+                    } else if (resp.code == 201) {
+                        state = 1;
+                        msg = "支付失败";
+                    } else if (resp.code == 153) {
+                        state = -1;
+                        msg = "订单不存在";
+                    } else {
+                        try { msg = miRc4Decrypt(resp.msg); } catch (Exception ignored) {}
+                    }
+                    if (state == 2) {
+                        vipTime = System.currentTimeMillis() / 1000L;
+                    }
+                    cb.onPayState(state, msg);
+                } catch (Exception e) {
+                    Log.e(TAG, "queryPayResult error", e);
+                    cb.onPayState(-1, "查询错误: " + e.getMessage());
+                }
+            }
+        });
+    }
+
     public static int compareVersion(String v1, String v2) {
         String[] p1 = v1.split("\\.");
         String[] p2 = v2.split("\\.");
@@ -369,20 +562,31 @@ public class RuyiApi {
         }
         JSONObject json = new JSONObject(jsonStr);
         int code = json.optInt("code", -1);
-        String msg;
+        String msg = "";
         try {
             Object msgObj = json.get("msg");
-            msg = msgObj instanceof JSONObject ? ((JSONObject) msgObj).toString() : String.valueOf(msgObj);
+            if (msgObj instanceof JSONObject) {
+                msg = ((JSONObject) msgObj).toString();
+            } else if (msgObj instanceof String) {
+                msg = (String) msgObj;
+            } else {
+                msg = String.valueOf(msgObj);
+            }
         } catch (Exception e) {
             msg = "";
         }
-        return new ApiResp(code, msg);
+        return new ApiResp(code, msg, json);
     }
 
     private static class ApiResp {
         final int code;
         final String msg;
-        ApiResp(int code, String msg) { this.code = code; this.msg = msg; }
+        final JSONObject fullJson;
+        ApiResp(int code, String msg, JSONObject fullJson) {
+            this.code = code;
+            this.msg = msg;
+            this.fullJson = fullJson;
+        }
     }
 
     private static String extractJson(String raw) {

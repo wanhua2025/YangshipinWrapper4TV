@@ -45,6 +45,11 @@ import android.widget.ProgressBar;
 import android.widget.TextView;
 
 import androidx.core.content.FileProvider;
+import androidx.media3.common.MediaItem;
+import androidx.media3.common.PlaybackException;
+import androidx.media3.common.Player;
+import androidx.media3.exoplayer.ExoPlayer;
+import androidx.media3.ui.PlayerView;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -60,12 +65,16 @@ import java.net.URL;
 import java.nio.charset.Charset;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 public class MainActivity extends Activity {
     private static final String TAG = "YSPTV";
     private static final String YSP_HOME_URL = "https://www.yangshipin.cn/tv/home";
+    private static final String M3U_URL = "http://124.223.198.234:1905/interface.m3u";
     private static final String PREFS = "yangshipin_tv";
     private static final String PREF_QUALITY = "quality";
     private static final String PREF_CHANNEL_PID = "channel_pid";
@@ -75,6 +84,8 @@ public class MainActivity extends Activity {
     private static final String PLAYBACK_MODE_SW = "sw";
     private static final String[] QUALITY_ORDER = new String[]{"hd", "shd", "fhd"};
     private static final String PLAYBACK_HELP_TEXT = "按上下键换台，按OK键打开频道列表，按左右切换清晰度";
+    private static final int MENU_PAGE_GROUPS = 2;
+    private static final int MENU_PAGE_GROUP_CHANNELS = 3;
     private static final int MENU_PAGE_CHANNELS = 0;
     private static final int MENU_PAGE_SETTINGS = 1;
     private static final int SETTINGS_ITEM_COUNT = 2;
@@ -82,7 +93,7 @@ public class MainActivity extends Activity {
     private static final int SETTINGS_IDX_AUTOSTART = 1;
 
     private final Handler handler = new Handler(Looper.getMainLooper());
-    private static final long MENU_AUTO_HIDE_MS = 5000;
+    private static final long MENU_AUTO_HIDE_MS = 15000;
     private final Runnable menuAutoHideRunnable = new Runnable() {
         @Override
         public void run() {
@@ -93,6 +104,7 @@ public class MainActivity extends Activity {
         }
     };
     private final List<Channel> channels = new ArrayList<Channel>();
+    private final Set<String> badUrls = new HashSet<>();
     private static final Map<String, String> CHANNEL_NAME_MAP = new HashMap<>();
     static {
         CHANNEL_NAME_MAP.put("CCTV1", "CCTV-1 综合");
@@ -136,6 +148,8 @@ public class MainActivity extends Activity {
 
     private FrameLayout root;
     private WebView bridgeWebView;
+    private PlayerView playerView;
+    private ExoPlayer exoPlayer;
     private FrameLayout loadingOverlay;
     private GestureTraceView gestureTraceView;
     private TextView overlayText;
@@ -144,6 +158,9 @@ public class MainActivity extends Activity {
     private TextView menuHeader;
     private ListView channelListView;
     private ChannelAdapter channelAdapter;
+    private List<String> menuGroups = new ArrayList<>();
+    private Map<String, List<Channel>> groupChannelMap = new LinkedHashMap<>();
+    private int selectedGroupIndex = 0;
     private SharedPreferences preferences;
 
     private String preferredQuality = "fhd";
@@ -160,6 +177,7 @@ public class MainActivity extends Activity {
     private int touchSlop;
     private final StringBuilder numberBuffer = new StringBuilder();
     private RuyiApi ruyiApi;
+    private CenterModule centerModule;
     private TextView ruyiStatusText;
     private String ruyiStatusStr = "Ruyi: connecting...";
     private boolean ruyiBanned = false;
@@ -174,6 +192,9 @@ public class MainActivity extends Activity {
             if (bridgeWebView != null) {
                 bridgeWebView.stopLoading();
                 bridgeWebView.loadUrl("about:blank");
+            }
+            if (exoPlayer != null) {
+                exoPlayer.stop();
             }
             if (overlayText != null) {
                 overlayText.setBackgroundColor(Color.parseColor("#CC000000"));
@@ -193,6 +214,9 @@ public class MainActivity extends Activity {
         } else {
             if (bridgeWebView != null) {
                 bridgeWebView.loadUrl(YSP_HOME_URL);
+            }
+            if (channelsLoaded && exoPlayer != null) {
+                playCurrentWithExo();
             }
             if (overlayText != null) {
                 overlayText.setText("");
@@ -268,8 +292,11 @@ public class MainActivity extends Activity {
         autoStartOnBoot = preferences.getBoolean(PREF_AUTO_START, true);
 
         buildUi();
-        setupProtocolBridge();
+        // setupProtocolBridge(); // DISABLED: using M3U + ExoPlayer instead
+        initExoPlayer();
+        loadM3uList();
         initRuyi();
+        centerModule = new CenterModule(this, ruyiApi, root);
         showOverlay("加载中...", false);
         updateStatus();
     }
@@ -343,6 +370,15 @@ public class MainActivity extends Activity {
         channelListView.setSelector(new ColorDrawable(Color.TRANSPARENT));
         channelAdapter = new ChannelAdapter(this);
         channelListView.setAdapter(channelAdapter);
+        channelListView.setOnTouchListener(new View.OnTouchListener() {
+            @Override
+            public boolean onTouch(View v, android.view.MotionEvent event) {
+                if (menuPanel.getVisibility() == View.VISIBLE && event.getAction() == android.view.MotionEvent.ACTION_MOVE) {
+                    resetMenuAutoHide();
+                }
+                return false;
+            }
+        });
         menuPanel.addView(channelListView, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 0,
@@ -354,6 +390,306 @@ public class MainActivity extends Activity {
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 Gravity.LEFT);
         root.addView(menuPanel, menuParams);
+    }
+
+    private void initExoPlayer() {
+        playerView = new PlayerView(this);
+        playerView.setBackgroundColor(Color.BLACK);
+        playerView.setUseController(false);
+        playerView.setFocusable(false);
+        exoPlayer = new ExoPlayer.Builder(this).build();
+        playerView.setPlayer(exoPlayer);
+        root.addView(playerView, 0, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT));
+        exoPlayer.addListener(new Player.Listener() {
+            @Override
+            public void onPlaybackStateChanged(int playbackState) {
+                Log.i(TAG, "exo_state_changed state=" + playbackState);
+                if (playbackState == Player.STATE_READY) {
+                    if (loadingOverlay != null && loadingOverlay.getVisibility() == View.VISIBLE) {
+                        loadingOverlay.setVisibility(View.GONE);
+                    }
+                    overlayText.setVisibility(View.GONE);
+                    handler.removeCallbacks(hideOverlayRunnable);
+                    updateStatus();
+                } else if (playbackState == Player.STATE_BUFFERING) {
+                    showPlaybackOverlay();
+                }
+            }
+
+            @Override
+            public void onPlayerError(PlaybackException error) {
+                Log.e(TAG, "exo_player_error", error);
+                showCenterMessage("线路暂时维护中...", 4000);
+            }
+        });
+    }
+
+    private void loadM3uList() {
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    HttpURLConnection conn = (HttpURLConnection) new URL(M3U_URL).openConnection();
+                    conn.setConnectTimeout(10000);
+                    conn.setReadTimeout(15000);
+                    conn.setRequestProperty("User-Agent", "Mozilla/5.0");
+                    int code = conn.getResponseCode();
+                    Log.i(TAG, "m3u_http_code=" + code);
+                    if (code != 200) {
+                        throw new IOException("HTTP " + code);
+                    }
+                    InputStream is = conn.getInputStream();
+                    ByteArrayOutputStream baos = new ByteArrayOutputStream();
+                    byte[] buf = new byte[8192];
+                    int r;
+                    while ((r = is.read(buf)) != -1) {
+                        baos.write(buf, 0, r);
+                    }
+                    is.close();
+                    final String content = new String(baos.toByteArray(), Charset.forName("UTF-8"));
+                    handler.post(new Runnable() {
+                        @Override
+                        public void run() {
+                            parseM3u8(content);
+                        }
+                    });
+                } catch (final Exception e) {
+                    Log.e(TAG, "m3u_load_failed", e);
+                    handler.post(new Runnable() {
+                        @Override
+                        public void run() {
+                            showOverlay("频道列表加载失败: " + e.getMessage(), false);
+                        }
+                    });
+                }
+            }
+        }).start();
+    }
+
+    private void parseM3u8(String content) {
+        List<Channel> parsed = new ArrayList<>();
+        String currentGroup = "默认";
+        String currentName = null;
+        String[] lines = content.split("\\r?\\n");
+        for (String line : lines) {
+            String trimmed = line.trim();
+            if (trimmed.isEmpty() || trimmed.startsWith("#")) {
+                if (trimmed.startsWith("#EXTINF")) {
+                    int gtIdx = trimmed.indexOf("group-title=\"");
+                    if (gtIdx >= 0) {
+                        int start = gtIdx + "group-title=\"".length();
+                        int end = trimmed.indexOf("\"", start);
+                        if (end > start) {
+                            currentGroup = trimmed.substring(start, end);
+                        }
+                    }
+                    int commaIdx = trimmed.lastIndexOf(',');
+                    if (commaIdx >= 0) {
+                        currentName = trimmed.substring(commaIdx + 1).trim();
+                    }
+                }
+                continue;
+            }
+            if (trimmed.startsWith("http") && currentName != null) {
+                parsed.add(new Channel(currentName, trimmed, currentGroup));
+                currentName = null;
+            }
+        }
+        Log.i(TAG, "m3u_parsed count=" + parsed.size());
+        if (parsed.isEmpty()) {
+            showOverlay("M3U 解析无频道", false);
+            return;
+        }
+        channels.clear();
+        channels.addAll(parsed);
+        channelsLoaded = true;
+
+        groupChannelMap.clear();
+        menuGroups.clear();
+        for (Channel ch : parsed) {
+            String g = (ch.group != null && ch.group.length() > 0) ? ch.group : "默认";
+            if (!groupChannelMap.containsKey(g)) {
+                groupChannelMap.put(g, new ArrayList<Channel>());
+                menuGroups.add(g);
+            }
+            groupChannelMap.get(g).add(ch);
+        }
+        Log.i(TAG, "m3u_groups count=" + menuGroups.size());
+
+        String savedPid = preferences.getString(PREF_CHANNEL_PID, "");
+        currentIndex = findChannelIndexByPid(savedPid);
+        if (currentIndex < 0 || currentIndex >= channels.size()) {
+            currentIndex = 0;
+        }
+        menuSelection = currentIndex;
+
+        Channel curCh = channels.get(currentIndex);
+        String curGroup = (curCh.group != null && curCh.group.length() > 0) ? curCh.group : "默认";
+        selectedGroupIndex = menuGroups.indexOf(curGroup);
+        if (selectedGroupIndex < 0) selectedGroupIndex = 0;
+
+        channelAdapter.notifyDataSetChanged();
+        updateMenuHeader();
+        playCurrentWithExo();
+        detectBadChannels();
+    }
+
+    private void playCurrentWithExo() {
+        if (channels.isEmpty() || exoPlayer == null) return;
+        Channel ch = channels.get(currentIndex);
+        preferences.edit().putString(PREF_CHANNEL_PID, String.valueOf(currentIndex)).apply();
+        showPlaybackOverlay();
+        updateStatus();
+        Log.i(TAG, "exo_play index=" + currentIndex + " name=" + ch.name + " url=" + ch.streamUrl);
+        String url = ch.streamUrl;
+        if (url == null || url.isEmpty()) return;
+        androidx.media3.datasource.DefaultHttpDataSource.Factory httpFactory =
+                new androidx.media3.datasource.DefaultHttpDataSource.Factory()
+                        .setConnectTimeoutMs(15000)
+                        .setReadTimeoutMs(15000)
+                        .setAllowCrossProtocolRedirects(true)
+                        .setUserAgent("Mozilla/5.0 (Linux; Android 14; TV) AppleWebKit/537.36 Chrome/120.0 Mobile");
+        MediaItem mediaItem = MediaItem.fromUri(Uri.parse(url));
+        androidx.media3.exoplayer.hls.HlsMediaSource.Factory hlsFactory =
+                new androidx.media3.exoplayer.hls.HlsMediaSource.Factory(httpFactory);
+        androidx.media3.exoplayer.source.ProgressiveMediaSource.Factory progFactory =
+                new androidx.media3.exoplayer.source.ProgressiveMediaSource.Factory(httpFactory);
+        androidx.media3.exoplayer.source.MediaSource source;
+        String lowerUrl = url.toLowerCase();
+        if (lowerUrl.endsWith(".mp4") || lowerUrl.endsWith(".mkv") || lowerUrl.endsWith(".avi")
+                || lowerUrl.endsWith(".flv") || lowerUrl.endsWith(".webm") || lowerUrl.endsWith(".mov")) {
+            source = progFactory.createMediaSource(mediaItem);
+            Log.i(TAG, "exo_source=progressive url=" + url);
+        } else {
+            source = hlsFactory.createMediaSource(mediaItem);
+            Log.i(TAG, "exo_source=hls url=" + url);
+        }
+        exoPlayer.setMediaSource(source);
+        exoPlayer.prepare();
+        exoPlayer.setPlayWhenReady(true);
+    }
+
+    private void detectBadChannels() {
+        final int total = channels.size();
+        Log.i(TAG, "channel_detect start total=" + total);
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newFixedThreadPool(12);
+                java.util.concurrent.CountDownLatch latch = new java.util.concurrent.CountDownLatch(total);
+                int checkedCount = 0;
+                for (int i = 0; i < total; i++) {
+                    final int idx = i;
+                    final Channel ch = channels.get(idx);
+                    if (ch.checked) { latch.countDown(); continue; }
+                    if (i == currentIndex) {
+                        ch.checked = true;
+                        latch.countDown();
+                        continue;
+                    }
+                    checkedCount++;
+                    pool.submit(new Runnable() {
+                        @Override
+                        public void run() {
+                            try {
+                                HttpURLConnection conn = (HttpURLConnection) new URL(ch.streamUrl).openConnection();
+                                conn.setConnectTimeout(5000);
+                                conn.setReadTimeout(5000);
+                                conn.setRequestMethod("HEAD");
+                                conn.setInstanceFollowRedirects(true);
+                                conn.setRequestProperty("User-Agent", "Mozilla/5.0");
+                                int code = conn.getResponseCode();
+                                conn.disconnect();
+                                if (code == 405) {
+                                    HttpURLConnection conn2 = (HttpURLConnection) new URL(ch.streamUrl).openConnection();
+                                    conn2.setConnectTimeout(5000);
+                                    conn2.setReadTimeout(5000);
+                                    conn2.setRequestMethod("GET");
+                                    conn2.setInstanceFollowRedirects(true);
+                                    conn2.setRequestProperty("User-Agent", "Mozilla/5.0");
+                                    conn2.setRequestProperty("Range", "bytes=0-0");
+                                    code = conn2.getResponseCode();
+                                    conn2.disconnect();
+                                }
+                                if (code >= 400) {
+                                    ch.hidden = true;
+                                    badUrls.add(ch.streamUrl);
+                                    Log.w(TAG, "channel_bad_http idx=" + idx + " code=" + code + " name=" + ch.name);
+                                }
+                            } catch (Exception e) {
+                                ch.hidden = true;
+                                badUrls.add(ch.streamUrl);
+                                Log.w(TAG, "channel_bad_net idx=" + idx + " err=" + e.getClass().getSimpleName() + " name=" + ch.name);
+                            } finally {
+                                ch.checked = true;
+                                latch.countDown();
+                            }
+                        }
+                    });
+                }
+                try { latch.await(90, java.util.concurrent.TimeUnit.SECONDS); } catch (InterruptedException ignored) {}
+                pool.shutdown();
+                Log.i(TAG, "channel_detect done checked=" + checkedCount + " bad=" + badUrls.size());
+                handler.post(new Runnable() {
+                    @Override
+                    public void run() {
+                        rebuildVisibleLists();
+                    }
+                });
+            }
+        }, "ChannelDetect").start();
+    }
+
+    private synchronized void rebuildVisibleLists() {
+        List<Channel> visible = new ArrayList<>();
+        int hiddenCount = 0;
+        for (Channel ch : channels) {
+            if (ch.hidden) hiddenCount++;
+            else visible.add(ch);
+        }
+        if (hiddenCount == 0) {
+            channelAdapter.notifyDataSetChanged();
+            return;
+        }
+        int wasCurrentUrlIndex = -1;
+        String curUrl = "";
+        if (currentIndex >= 0 && currentIndex < channels.size()) {
+            curUrl = channels.get(currentIndex).streamUrl;
+        }
+        channels.clear();
+        channels.addAll(visible);
+        groupChannelMap.clear();
+        menuGroups.clear();
+        for (Channel ch : visible) {
+            String g = (ch.group != null && ch.group.length() > 0) ? ch.group : "默认";
+            if (!groupChannelMap.containsKey(g)) {
+                groupChannelMap.put(g, new ArrayList<Channel>());
+                menuGroups.add(g);
+            }
+            groupChannelMap.get(g).add(ch);
+        }
+        for (int i = 0; i < channels.size(); i++) {
+            if (channels.get(i).streamUrl.equals(curUrl)) { wasCurrentUrlIndex = i; break; }
+        }
+        if (wasCurrentUrlIndex < 0) wasCurrentUrlIndex = 0;
+        currentIndex = wasCurrentUrlIndex;
+        menuSelection = currentIndex;
+        if (!channels.isEmpty()) {
+            String curGroup = (channels.get(currentIndex).group != null && channels.get(currentIndex).group.length() > 0)
+                    ? channels.get(currentIndex).group : "默认";
+            selectedGroupIndex = menuGroups.indexOf(curGroup);
+            if (selectedGroupIndex < 0) selectedGroupIndex = 0;
+        }
+        Log.i(TAG, "channel_rebuild hidden=" + hiddenCount + " remain=" + channels.size());
+        channelAdapter.notifyDataSetChanged();
+        updateMenuHeader();
+        if (channels.isEmpty()) {
+            showCenterMessage("所有频道均无法播放", 0);
+        } else if (currentIndex >= channels.size()) {
+            currentIndex = 0;
+        }
     }
 
     @SuppressLint({"SetJavaScriptEnabled", "AddJavascriptInterface"})
@@ -488,6 +824,10 @@ public class MainActivity extends Activity {
         if (pid == null || pid.length() == 0) {
             return -1;
         }
+        try {
+            int idx = Integer.parseInt(pid.trim());
+            if (idx >= 0 && idx < channels.size()) return idx;
+        } catch (NumberFormatException ignored) {}
         for (int i = 0; i < channels.size(); i++) {
             if (pid.equals(channels.get(i).pid)) {
                 return i;
@@ -501,10 +841,13 @@ public class MainActivity extends Activity {
     }
 
     private void requestCurrentStream(String reason) {
-        if (channels.isEmpty() || bridgeWebView == null) {
+        if (channels.isEmpty()) return;
+        Channel channel = channels.get(currentIndex);
+        if (channel.streamUrl != null && channel.streamUrl.length() > 0) {
+            playCurrentWithExo();
             return;
         }
-        Channel channel = channels.get(currentIndex);
+        if (bridgeWebView == null) return;
         preferences.edit().putString(PREF_CHANNEL_PID, channel.pid).apply();
         showPlaybackOverlay();
         updateStatus();
@@ -563,7 +906,13 @@ public class MainActivity extends Activity {
         if (channels.isEmpty()) {
             return;
         }
-        currentIndex = (currentIndex + delta + channels.size()) % channels.size();
+        if (centerModule != null) centerModule.onChannelChanged();
+        int next = currentIndex;
+        for (int step = 0; step < channels.size(); step++) {
+            next = (next + delta + channels.size()) % channels.size();
+            if (!channels.get(next).hidden) break;
+        }
+        currentIndex = next;
         Log.i(TAG, "channel_change index=" + currentIndex + " name=" + channels.get(currentIndex).name);
         menuSelection = currentIndex;
         channelAdapter.notifyDataSetChanged();
@@ -640,6 +989,27 @@ public class MainActivity extends Activity {
         }
     }
 
+    private void showCenterMessage(final String msg, long durationMs) {
+        handler.removeCallbacks(hideOverlayRunnable);
+        overlayText.setTextColor(Color.WHITE);
+        overlayText.setTextSize(32);
+        overlayText.setText("\n\n" + msg + "\n\n");
+        overlayText.setBackgroundColor(0xCC000000);
+        overlayText.setGravity(Gravity.CENTER);
+        overlayText.setVisibility(View.VISIBLE);
+        if (durationMs > 0) {
+            handler.postDelayed(new Runnable() {
+                @Override
+                public void run() {
+                    overlayText.setVisibility(View.GONE);
+                    overlayText.setBackgroundColor(Color.TRANSPARENT);
+                    overlayText.setTextSize(44);
+                    overlayText.setGravity(Gravity.CENTER_VERTICAL | Gravity.START);
+                }
+            }, durationMs);
+        }
+    }
+
     private void toggleMenu() {
         if (menuPanel.getVisibility() == View.VISIBLE) {
             hideMenu();
@@ -650,10 +1020,33 @@ public class MainActivity extends Activity {
 
     private void showMenu() {
         if (channels.isEmpty()) {
-            showOverlay("Channel list is still loading.", true);
+            showOverlay("频道列表加载中...", true);
             return;
         }
-        showChannelsMenu();
+        showGroupsMenu();
+    }
+
+    private void showGroupsMenu() {
+        menuPage = MENU_PAGE_GROUPS;
+        menuSelection = selectedGroupIndex;
+        updateMenuHeader();
+        menuPanel.setVisibility(View.VISIBLE);
+        channelAdapter.notifyDataSetChanged();
+        channelListView.setSelection(menuSelection);
+        resetMenuAutoHide();
+    }
+
+    private void showGroupChannelsMenu() {
+        menuPage = MENU_PAGE_GROUP_CHANNELS;
+        String groupName = menuGroups.get(selectedGroupIndex);
+        List<Channel> groupChans = groupChannelMap.get(groupName);
+        if (groupChans == null || groupChans.isEmpty()) return;
+        int groupStartIdx = channels.indexOf(groupChans.get(0));
+        menuSelection = groupStartIdx;
+        updateMenuHeader();
+        channelAdapter.notifyDataSetChanged();
+        channelListView.setSelection(0);
+        resetMenuAutoHide();
     }
 
     private void showChannelsMenu() {
@@ -689,12 +1082,17 @@ public class MainActivity extends Activity {
     }
 
     private void updateMenuHeader() {
-        if (menuHeader != null) {
-            if (menuPage == MENU_PAGE_SETTINGS) {
-                menuHeader.setText("设置");
-            } else {
-                menuHeader.setText("频道  " + channels.size());
-            }
+        if (menuHeader == null) return;
+        if (menuPage == MENU_PAGE_SETTINGS) {
+            menuHeader.setText("设置");
+        } else if (menuPage == MENU_PAGE_GROUPS) {
+            menuHeader.setText("频道分类  共 " + menuGroups.size() + " 类  " + channels.size() + " 频道");
+        } else if (menuPage == MENU_PAGE_GROUP_CHANNELS) {
+            String groupName = menuGroups.get(selectedGroupIndex);
+            int sz = groupChannelMap.containsKey(groupName) ? groupChannelMap.get(groupName).size() : 0;
+            menuHeader.setText(groupName + "  (" + sz + ")\u2003\u2003按←返回");
+        } else {
+            menuHeader.setText("频道  " + channels.size());
         }
     }
 
@@ -702,6 +1100,31 @@ public class MainActivity extends Activity {
         if (menuPage == MENU_PAGE_SETTINGS) {
             settingsSelection = (settingsSelection + delta + SETTINGS_ITEM_COUNT) % SETTINGS_ITEM_COUNT;
             channelListView.setSelection(settingsSelection);
+            channelAdapter.notifyDataSetChanged();
+            resetMenuAutoHide();
+            return;
+        }
+        if (menuPage == MENU_PAGE_GROUPS) {
+            int total = menuGroups.size() + 2;
+            if (total <= 0) return;
+            menuSelection = (menuSelection + delta + total) % total;
+            selectedGroupIndex = menuSelection;
+            if (selectedGroupIndex >= menuGroups.size()) selectedGroupIndex = 0;
+            channelListView.setSelection(menuSelection);
+            channelAdapter.notifyDataSetChanged();
+            resetMenuAutoHide();
+            return;
+        }
+        if (menuPage == MENU_PAGE_GROUP_CHANNELS) {
+            String groupName = menuGroups.get(selectedGroupIndex);
+            List<Channel> groupChans = groupChannelMap.get(groupName);
+            int total = groupChans.size();
+            if (total <= 0) return;
+            int groupStartIdx = channels.indexOf(groupChans.get(0));
+            int localPos = menuSelection - groupStartIdx;
+            localPos = (localPos + delta + total) % total;
+            menuSelection = groupStartIdx + localPos;
+            channelListView.setSelection(localPos);
             channelAdapter.notifyDataSetChanged();
             resetMenuAutoHide();
             return;
@@ -729,9 +1152,15 @@ public class MainActivity extends Activity {
 
     private void selectMenuChannel() {
         if (channels.isEmpty()) return;
-        int realIndex = menuSelection - 1;
+        int realIndex = menuSelection;
+        if (menuPage == MENU_PAGE_CHANNELS) realIndex = menuSelection - 1;
         if (realIndex < 0 || realIndex >= channels.size()) return;
         currentIndex = realIndex;
+        Channel playedCh = channels.get(currentIndex);
+        Log.i(TAG, "select_play absIdx=" + currentIndex + " name=" + playedCh.name + " url=" + playedCh.streamUrl);
+        String playedGroup = (playedCh.group != null && playedCh.group.length() > 0) ? playedCh.group : "默认";
+        selectedGroupIndex = menuGroups.indexOf(playedGroup);
+        if (selectedGroupIndex < 0) selectedGroupIndex = 0;
         requestCurrentStream();
         hideMenu();
     }
@@ -740,6 +1169,35 @@ public class MainActivity extends Activity {
         if (menuPage == MENU_PAGE_SETTINGS) {
             if (position == SETTINGS_IDX_DECODER) togglePlaybackMode();
             else if (position == SETTINGS_IDX_AUTOSTART) toggleAutoStart();
+            return;
+        }
+        if (menuPage == MENU_PAGE_GROUPS) {
+            if (position < menuGroups.size()) {
+                selectedGroupIndex = position;
+                showGroupChannelsMenu();
+            } else if (position == menuGroups.size()) {
+                showSettingsMenu();
+            } else if (position == menuGroups.size() + 1) {
+                hideMenu();
+            }
+            return;
+        }
+        if (menuPage == MENU_PAGE_GROUP_CHANNELS) {
+            String gn = menuGroups.get(selectedGroupIndex);
+            List<Channel> gcs = groupChannelMap.get(gn);
+            if (gcs == null || gcs.isEmpty()) return;
+            int localPos;
+            if (position >= 0 && position < gcs.size()) {
+                localPos = position;
+            } else {
+                localPos = position - channels.indexOf(gcs.get(0));
+                if (localPos < 0 || localPos >= gcs.size()) return;
+            }
+            Channel picked = gcs.get(localPos);
+            int absIdx = channels.indexOf(picked);
+            menuSelection = absIdx;
+            Log.i(TAG, "select_pick localPos=" + localPos + " absIdx=" + absIdx + " name=" + picked.name);
+            selectMenuChannel();
             return;
         }
         if (menuPage == MENU_PAGE_CHANNELS) {
@@ -783,27 +1241,56 @@ public class MainActivity extends Activity {
             appendNumber(keyCode - KeyEvent.KEYCODE_0);
             return true;
         }
+
+        if (keyCode == KeyEvent.KEYCODE_DPAD_LEFT) {
+            if (centerModule != null && centerModule.isVisible()) {
+                centerModule.handleKey(keyCode);
+                return true;
+            }
+            if (menuPanel.getVisibility() != View.VISIBLE) {
+                if (centerModule != null) {
+                    centerModule.toggle();
+                    return true;
+                }
+            }
+        }
+
+        if (centerModule != null && centerModule.isVisible()) {
+            if (centerModule.handleKey(keyCode)) return true;
+        }
+
         if (menuPanel.getVisibility() == View.VISIBLE) {
             if (keyCode == KeyEvent.KEYCODE_DPAD_UP) { moveMenuSelection(-1); return true; }
             if (keyCode == KeyEvent.KEYCODE_DPAD_DOWN) { moveMenuSelection(1); return true; }
             if (keyCode == KeyEvent.KEYCODE_DPAD_LEFT) {
-                if (menuPage == MENU_PAGE_SETTINGS) showChannelsMenu();
+                if (menuPage == MENU_PAGE_GROUP_CHANNELS) { showGroupsMenu(); }
+                else if (menuPage == MENU_PAGE_SETTINGS) { showGroupsMenu(); }
                 return true;
             }
             if (keyCode == KeyEvent.KEYCODE_DPAD_RIGHT) {
-                if (menuPage == MENU_PAGE_SETTINGS) selectMenuItemAt(settingsSelection);
+                if (menuPage == MENU_PAGE_GROUPS && menuSelection < menuGroups.size()) {
+                    selectedGroupIndex = menuSelection;
+                    showGroupChannelsMenu();
+                } else if (menuPage == MENU_PAGE_SETTINGS) {
+                    selectMenuItemAt(settingsSelection);
+                }
                 return true;
             }
             if (keyCode == KeyEvent.KEYCODE_DPAD_CENTER || keyCode == KeyEvent.KEYCODE_ENTER) {
                 selectMenuItemAt(menuPage == MENU_PAGE_SETTINGS ? settingsSelection : menuSelection);
                 return true;
             }
-            if (keyCode == KeyEvent.KEYCODE_BACK) { hideMenu(); return true; }
+            if (keyCode == KeyEvent.KEYCODE_BACK) {
+                if (menuPage == MENU_PAGE_GROUP_CHANNELS) showGroupsMenu();
+                else if (menuPage == MENU_PAGE_SETTINGS) showGroupsMenu();
+                else hideMenu();
+                return true;
+            }
             return true;
         }
         if (keyCode == KeyEvent.KEYCODE_DPAD_UP) { changeChannel(-1); return true; }
         if (keyCode == KeyEvent.KEYCODE_DPAD_DOWN) { changeChannel(1); return true; }
-        if (keyCode == KeyEvent.KEYCODE_DPAD_LEFT) { changeQuality(-1); return true; }
+        if (keyCode == KeyEvent.KEYCODE_DPAD_LEFT) { if (centerModule != null) centerModule.toggle(); return true; }
         if (keyCode == KeyEvent.KEYCODE_DPAD_RIGHT) { changeQuality(1); return true; }
         if (keyCode == KeyEvent.KEYCODE_DPAD_CENTER || keyCode == KeyEvent.KEYCODE_ENTER || keyCode == KeyEvent.KEYCODE_MENU) {
             toggleMenu(); return true;
@@ -826,15 +1313,36 @@ public class MainActivity extends Activity {
     }
 
     private void handleTouchSwipe(float dx, float dy, boolean startedInMenu) {
-        if (menuPanel.getVisibility() == View.VISIBLE && startedInMenu) {
-            if (Math.abs(dx) > Math.abs(dy)) {
-                if (dx < 0 && menuPage == MENU_PAGE_SETTINGS) showChannelsMenu();
-                else if (dx > 0 && menuPage == MENU_PAGE_SETTINGS) selectMenuItemAt(settingsSelection);
+        if (centerModule != null && centerModule.isVisible()) {
+            if (Math.abs(dx) > Math.abs(dy) && dx < 0) {
+                centerModule.hide();
             }
             return;
         }
-        if (Math.abs(dx) > Math.abs(dy)) { changeQuality(dx > 0 ? 1 : -1); }
-        else { changeChannel(dy > 0 ? 1 : -1); }
+        if (menuPanel.getVisibility() == View.VISIBLE && startedInMenu) {
+            if (Math.abs(dx) > Math.abs(dy)) {
+                if (dx < 0) {
+                    if (menuPage == MENU_PAGE_GROUP_CHANNELS || menuPage == MENU_PAGE_SETTINGS) showGroupsMenu();
+                } else if (dx > 0) {
+                    if (menuPage == MENU_PAGE_GROUPS && menuSelection < menuGroups.size()) {
+                        selectedGroupIndex = menuSelection;
+                        showGroupChannelsMenu();
+                    } else if (menuPage == MENU_PAGE_SETTINGS) {
+                        selectMenuItemAt(settingsSelection);
+                    }
+                }
+            }
+            return;
+        }
+        if (Math.abs(dx) > Math.abs(dy)) {
+            if (dx < 0) {
+                if (centerModule != null) centerModule.toggle();
+            } else {
+                changeQuality(1);
+            }
+        } else {
+            changeChannel(dy > 0 ? 1 : -1);
+        }
     }
 
     private boolean isPointInsideMenu(float x, float y) {
@@ -1184,6 +1692,10 @@ public class MainActivity extends Activity {
 
     @Override
     protected void onDestroy() {
+        if (centerModule != null) {
+            centerModule.destroy();
+            centerModule = null;
+        }
         handler.removeCallbacksAndMessages(null);
         if (bridgeWebView != null) {
             bridgeWebView.stopLoading();
@@ -1191,6 +1703,14 @@ public class MainActivity extends Activity {
             bridgeWebView.removeJavascriptInterface("YspAndroid");
             bridgeWebView.destroy();
             bridgeWebView = null;
+        }
+        if (exoPlayer != null) {
+            exoPlayer.release();
+            exoPlayer = null;
+        }
+        if (playerView != null) {
+            playerView.setPlayer(null);
+            playerView = null;
         }
         Log.i(TAG, "destroy_cleanup_complete");
         super.onDestroy();
@@ -1235,17 +1755,27 @@ public class MainActivity extends Activity {
 
     private static final class Channel {
         final String name;
+        final String streamUrl;
+        final String group;
         final String pid;
         final String streamId;
-        final String type;
-        final boolean is4K;
+        volatile boolean hidden = false;
+        volatile boolean checked = false;
+
+        Channel(String name, String streamUrl, String group) {
+            this.name = name;
+            this.streamUrl = streamUrl;
+            this.group = group;
+            this.pid = "";
+            this.streamId = "";
+        }
 
         Channel(String name, String pid, String streamId, String type, boolean is4K) {
             this.name = name;
+            this.streamUrl = "";
+            this.group = "";
             this.pid = pid;
             this.streamId = streamId;
-            this.type = type;
-            this.is4K = is4K;
         }
     }
 
@@ -1257,6 +1787,12 @@ public class MainActivity extends Activity {
         @Override
         public int getCount() {
             if (menuPage == MENU_PAGE_SETTINGS) return SETTINGS_ITEM_COUNT;
+            if (menuPage == MENU_PAGE_GROUPS) return menuGroups.size() + 2;
+            if (menuPage == MENU_PAGE_GROUP_CHANNELS) {
+                String g = menuGroups.get(selectedGroupIndex);
+                List<Channel> chans = groupChannelMap.get(g);
+                return chans != null ? chans.size() : 0;
+            }
             return channels.size() + 1;
         }
 
@@ -1282,6 +1818,8 @@ public class MainActivity extends Activity {
                         ViewGroup.LayoutParams.MATCH_PARENT, dp(54)));
             }
             boolean selected;
+            int curIdxForBg = -1;
+
             if (menuPage == MENU_PAGE_SETTINGS) {
                 if (position == SETTINGS_IDX_DECODER) {
                     textView.setText("解码器模式    " + playbackModeLabel());
@@ -1289,18 +1827,44 @@ public class MainActivity extends Activity {
                     textView.setText("开机自启       " + (autoStartOnBoot ? "开" : "关"));
                 }
                 selected = position == settingsSelection;
+            } else if (menuPage == MENU_PAGE_GROUPS) {
+                if (position < menuGroups.size()) {
+                    String g = menuGroups.get(position);
+                    int sz = groupChannelMap.containsKey(g) ? groupChannelMap.get(g).size() : 0;
+                    String arrow = (position == selectedGroupIndex) ? "▶ " : "    ";
+                    textView.setText(arrow + g + "  (" + sz + ")");
+                    textView.setTextColor(position == selectedGroupIndex ? Color.WHITE : 0xFFBBBBBB);
+                } else if (position == menuGroups.size()) {
+                    textView.setText("      ⚙ 设置");
+                } else {
+                    textView.setText("      关闭菜单");
+                }
+                selected = position == menuSelection;
+            } else if (menuPage == MENU_PAGE_GROUP_CHANNELS) {
+                String g = menuGroups.get(selectedGroupIndex);
+                List<Channel> groupChans = groupChannelMap.get(g);
+                Channel ch = groupChans.get(position);
+                textView.setText("  " + ch.name);
+                int absIdx = channels.indexOf(ch);
+                curIdxForBg = absIdx;
+                selected = (menuSelection == absIdx);
+                if (selected) textView.setTextColor(Color.WHITE);
+                else textView.setTextColor(0xFFBBBBBB);
             } else {
                 if (position == 0) {
                     textView.setText("设置");
                 } else {
                     Channel channel = channels.get(position - 1);
-                    String typeLabel = "weishi".equals(channel.type) ? "SAT" : "CCTV";
-                    textView.setText(position + ". " + channel.name + "  " + typeLabel);
+                    String groupLabel = (channel.group != null && channel.group.length() > 0) ? channel.group : "";
+                    textView.setText(position + ". " + channel.name + (groupLabel.length() > 0 ? "  " + groupLabel : ""));
                 }
                 selected = position == menuSelection;
             }
+
             if (selected) {
                 textView.setBackgroundColor(0xFF1D6FFF);
+            } else if (menuPage == MENU_PAGE_GROUP_CHANNELS && curIdxForBg == currentIndex) {
+                textView.setBackgroundColor(0x66333333);
             } else if (menuPage == MENU_PAGE_CHANNELS && position == currentIndex + 1) {
                 textView.setBackgroundColor(0x66333333);
             } else {
