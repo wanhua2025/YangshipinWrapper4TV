@@ -1,0 +1,317 @@
+# -*- coding: utf-8 -*-
+
+filepath = r"f:\YangshipinWrapper4TV-main\app\src\main\java\com\lwtdzh\yangshipinwrapper4tv\MainActivity.java"
+
+with open(filepath, 'r', encoding='utf-8') as f:
+    c = f.read()
+
+idx_toggle = c.index("    private void toggleMenu()")
+idx_bridge = c.index("    private final class BridgeCallbacks")
+idx_channel_adapter = c.index("    private final class ChannelAdapter")
+idx_gesture = c.index("    private final class GestureTraceView")
+
+keep_zone = c[idx_bridge:idx_channel_adapter]
+
+# Build new_zone1: new menu methods + updateRuyiStatus + onDestroy
+new_zone1 = """    private void toggleMenu() {
+        if (menuPanel.getVisibility() == View.VISIBLE) {
+            hideMenu();
+        } else {
+            showMenu();
+        }
+    }
+
+    private void showMenu() {
+        if (channels.isEmpty()) {
+            showOverlay("Channel list is still loading.", true);
+            return;
+        }
+        showChannelsMenu();
+    }
+
+    private void showChannelsMenu() {
+        menuPage = MENU_PAGE_CHANNELS;
+        menuSelection = currentIndex + 1;
+        if (menuSelection > channels.size()) menuSelection = 0;
+        updateMenuHeader();
+        menuPanel.setVisibility(View.VISIBLE);
+        channelAdapter.notifyDataSetChanged();
+        channelListView.setSelection(menuSelection);
+    }
+
+    private void showSettingsMenu() {
+        menuPage = MENU_PAGE_SETTINGS;
+        settingsSelection = 0;
+        updateMenuHeader();
+        menuPanel.setVisibility(View.VISIBLE);
+        channelAdapter.notifyDataSetChanged();
+        channelListView.setSelection(settingsSelection);
+    }
+
+    private void hideMenu() {
+        menuPanel.setVisibility(View.GONE);
+        hideSystemUi();
+    }
+
+    private void updateMenuHeader() {
+        if (menuHeader != null) {
+            if (menuPage == MENU_PAGE_SETTINGS) {
+                menuHeader.setText("Settings");
+            } else {
+                menuHeader.setText("Channels  " + channels.size());
+            }
+        }
+    }
+
+    private void moveMenuSelection(int delta) {
+        if (menuPage == MENU_PAGE_SETTINGS) {
+            settingsSelection = (settingsSelection + delta + SETTINGS_ITEM_COUNT) % SETTINGS_ITEM_COUNT;
+            channelListView.setSelection(settingsSelection);
+            channelAdapter.notifyDataSetChanged();
+            return;
+        }
+        int total = channels.size() + 1;
+        if (total <= 0) return;
+        menuSelection = (menuSelection + delta + total) % total;
+        channelListView.setSelection(menuSelection);
+        channelAdapter.notifyDataSetChanged();
+    }
+
+    private void togglePlaybackMode() {
+        playbackMode = PLAYBACK_MODE_SW.equals(playbackMode) ? PLAYBACK_MODE_HW : PLAYBACK_MODE_SW;
+        preferences.edit().putString(PREF_PLAYBACK_MODE, playbackMode).apply();
+        applyPlaybackModeToWebView();
+        channelAdapter.notifyDataSetChanged();
+    }
+
+    private void toggleAutoStart() {
+        autoStartOnBoot = !autoStartOnBoot;
+        preferences.edit().putBoolean(PREF_AUTO_START, autoStartOnBoot).apply();
+        channelAdapter.notifyDataSetChanged();
+    }
+
+    private void selectMenuChannel() {
+        if (channels.isEmpty()) return;
+        int realIndex = menuSelection - 1;
+        if (realIndex < 0 || realIndex >= channels.size()) return;
+        currentIndex = realIndex;
+        requestCurrentStream();
+        hideMenu();
+    }
+
+    private void selectMenuItemAt(int position) {
+        if (menuPage == MENU_PAGE_SETTINGS) {
+            if (position == SETTINGS_IDX_DECODER) togglePlaybackMode();
+            else if (position == SETTINGS_IDX_AUTOSTART) toggleAutoStart();
+            return;
+        }
+        if (menuPage == MENU_PAGE_CHANNELS) {
+            if (position == 0) { showSettingsMenu(); }
+            else { menuSelection = position; selectMenuChannel(); }
+        }
+    }
+
+    private void commitNumberInput() {
+        if (numberBuffer.length() == 0 || channels.isEmpty()) return;
+        try {
+            int oneBased = Integer.parseInt(numberBuffer.toString());
+            numberBuffer.setLength(0);
+            if (oneBased >= 1 && oneBased <= channels.size()) {
+                currentIndex = oneBased - 1;
+                menuSelection = currentIndex + 1;
+                requestCurrentStream();
+            } else {
+                showOverlay("Channel out of range", true);
+            }
+        } catch (NumberFormatException ignored) {
+            numberBuffer.setLength(0);
+        }
+    }
+
+    @Override
+    public boolean dispatchKeyEvent(KeyEvent event) {
+        if (event.getAction() != KeyEvent.ACTION_DOWN) return true;
+        int keyCode = event.getKeyCode();
+        if (keyCode >= KeyEvent.KEYCODE_0 && keyCode <= KeyEvent.KEYCODE_9) {
+            appendNumber(keyCode - KeyEvent.KEYCODE_0);
+            return true;
+        }
+        if (menuPanel.getVisibility() == View.VISIBLE) {
+            if (keyCode == KeyEvent.KEYCODE_DPAD_UP) { moveMenuSelection(-1); return true; }
+            if (keyCode == KeyEvent.KEYCODE_DPAD_DOWN) { moveMenuSelection(1); return true; }
+            if (keyCode == KeyEvent.KEYCODE_DPAD_LEFT) {
+                if (menuPage == MENU_PAGE_SETTINGS) showChannelsMenu();
+                return true;
+            }
+            if (keyCode == KeyEvent.KEYCODE_DPAD_RIGHT) {
+                if (menuPage == MENU_PAGE_SETTINGS) selectMenuItemAt(settingsSelection);
+                return true;
+            }
+            if (keyCode == KeyEvent.KEYCODE_DPAD_CENTER || keyCode == KeyEvent.KEYCODE_ENTER) {
+                selectMenuItemAt(menuPage == MENU_PAGE_SETTINGS ? settingsSelection : menuSelection);
+                return true;
+            }
+            if (keyCode == KeyEvent.KEYCODE_BACK) { hideMenu(); return true; }
+            return true;
+        }
+        if (keyCode == KeyEvent.KEYCODE_DPAD_UP) { changeChannel(-1); return true; }
+        if (keyCode == KeyEvent.KEYCODE_DPAD_DOWN) { changeChannel(1); return true; }
+        if (keyCode == KeyEvent.KEYCODE_DPAD_LEFT) { changeQuality(-1); return true; }
+        if (keyCode == KeyEvent.KEYCODE_DPAD_RIGHT) { changeQuality(1); return true; }
+        if (keyCode == KeyEvent.KEYCODE_DPAD_CENTER || keyCode == KeyEvent.KEYCODE_ENTER || keyCode == KeyEvent.KEYCODE_MENU) {
+            toggleMenu(); return true;
+        }
+        if (keyCode == KeyEvent.KEYCODE_BACK) { finish(); return true; }
+        return super.dispatchKeyEvent(event);
+    }
+
+    private void handleTouchTap(float x, float y) {
+        if (menuPanel.getVisibility() == View.VISIBLE) {
+            if (isPointInsideMenu(x, y)) {
+                int position = pointToMenuPosition(x, y);
+                if (position >= 0) selectMenuItemAt(position);
+            } else {
+                hideMenu();
+            }
+            return;
+        }
+        toggleMenu();
+    }
+
+    private void handleTouchSwipe(float dx, float dy, boolean startedInMenu) {
+        if (menuPanel.getVisibility() == View.VISIBLE && startedInMenu) {
+            if (Math.abs(dx) > Math.abs(dy)) {
+                if (dx < 0 && menuPage == MENU_PAGE_SETTINGS) showChannelsMenu();
+                else if (dx > 0 && menuPage == MENU_PAGE_SETTINGS) selectMenuItemAt(settingsSelection);
+            }
+            return;
+        }
+        if (Math.abs(dx) > Math.abs(dy)) { changeQuality(dx > 0 ? 1 : -1); }
+        else { changeChannel(dy > 0 ? 1 : -1); }
+    }
+
+    private boolean isPointInsideMenu(float x, float y) {
+        return menuPanel.getVisibility() == View.VISIBLE
+                && x >= menuPanel.getLeft() && x <= menuPanel.getRight()
+                && y >= menuPanel.getTop() && y <= menuPanel.getBottom();
+    }
+
+    private int pointToMenuPosition(float x, float y) {
+        Rect rect = getListRectInRoot();
+        if (rect == null || !rect.contains((int) x, (int) y)) return -1;
+        return channelListView.pointToPosition((int) (x - rect.left), (int) (y - rect.top));
+    }
+
+    private void updateRuyiStatus() {
+        if (ruyiStatusText != null) {
+            if (ruyiApi != null && ruyiApi.isRegistered()) {
+                ruyiStatusStr = "Ruyi: OK | " + ruyiApi.getUsername()
+                        + " | VIP:" + (ruyiApi.isVip() ? "Yes" : "No");
+            }
+            ruyiStatusText.setText(ruyiStatusStr);
+            ruyiStatusText.setVisibility(View.VISIBLE);
+            handler.removeCallbacks(hideRuyiStatusRunnable);
+            handler.postDelayed(hideRuyiStatusRunnable, 7000);
+        }
+    }
+
+    private final Runnable hideRuyiStatusRunnable = new Runnable() {
+        @Override
+        public void run() {
+            if (ruyiStatusText != null) {
+                ruyiStatusText.setVisibility(View.GONE);
+            }
+        }
+    };
+
+    @Override
+    protected void onDestroy() {
+        handler.removeCallbacksAndMessages(null);
+        if (bridgeWebView != null) {
+            bridgeWebView.stopLoading();
+            bridgeWebView.loadUrl("about:blank");
+            bridgeWebView.removeJavascriptInterface("YspAndroid");
+            bridgeWebView.destroy();
+            bridgeWebView = null;
+        }
+        Log.i(TAG, "destroy_cleanup_complete");
+        super.onDestroy();
+    }
+
+"""
+
+new_zone2 = """    private final class ChannelAdapter extends BaseAdapter {
+        private final Context context;
+
+        ChannelAdapter(Context context) { this.context = context; }
+
+        @Override
+        public int getCount() {
+            if (menuPage == MENU_PAGE_SETTINGS) return SETTINGS_ITEM_COUNT;
+            return channels.size() + 1;
+        }
+
+        @Override
+        public Object getItem(int position) { return position; }
+
+        @Override
+        public long getItemId(int position) { return position; }
+
+        @Override
+        public View getView(int position, View convertView, ViewGroup parent) {
+            TextView textView;
+            if (convertView instanceof TextView) {
+                textView = (TextView) convertView;
+            } else {
+                textView = new TextView(context);
+                textView.setTextSize(22);
+                textView.setGravity(Gravity.CENTER_VERTICAL);
+                textView.setSingleLine(true);
+                textView.setPadding(dp(18), 0, dp(14), 0);
+                textView.setTextColor(Color.WHITE);
+                textView.setLayoutParams(new ListView.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT, dp(54)));
+            }
+            boolean selected;
+            if (menuPage == MENU_PAGE_SETTINGS) {
+                if (position == SETTINGS_IDX_DECODER) {
+                    textView.setText("Decoder Mode    " + playbackModeLabel());
+                } else {
+                    textView.setText("Auto Boot       " + (autoStartOnBoot ? "ON" : "OFF"));
+                }
+                selected = position == settingsSelection;
+            } else {
+                if (position == 0) {
+                    textView.setText("Settings");
+                } else {
+                    Channel channel = channels.get(position - 1);
+                    String typeLabel = "weishi".equals(channel.type) ? "SAT" : "CCTV";
+                    textView.setText(position + ". " + channel.name + "  " + typeLabel);
+                }
+                selected = position == menuSelection;
+            }
+            if (selected) {
+                textView.setBackgroundColor(0xFF1D6FFF);
+            } else if (menuPage == MENU_PAGE_CHANNELS && position == currentIndex + 1) {
+                textView.setBackgroundColor(0x66333333);
+            } else {
+                textView.setBackgroundColor(Color.TRANSPARENT);
+            }
+            return textView;
+        }
+    }
+
+"""
+
+new_content = (
+    c[:idx_toggle]
+    + new_zone1
+    + keep_zone
+    + new_zone2
+    + c[idx_gesture:]
+)
+
+with open(filepath, 'w', encoding='utf-8') as f:
+    f.write(new_content)
+
+print(f"Done! New size: {len(new_content)}")
