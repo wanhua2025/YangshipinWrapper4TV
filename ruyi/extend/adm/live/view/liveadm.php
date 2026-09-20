@@ -8,7 +8,7 @@ Right:live
 Version:1.0
 */
 if(!isset($islogin))header("Location: /");//非法访问
-if(Db::table('live')->exist()){//判断数据表是否存在
+if(Db::table('live')->exist()){//判断数据表是否存�?
     $appid = isset($_GET['app']) ? intval($_GET['app']) : 0;
     $see = isset($_GET['see']) ? intval($_GET['see']) : 0;
     $page=isset($_GET['page']) ? intval($_GET['page']) : 1;
@@ -82,8 +82,8 @@ $sql = "CREATE TABLE `{$DP}live` (
 							<form class="form-inline">
 							    <button type="button" class="btn btn-danger mb-2 mr-2" data-toggle="modal" data-target="#add"><i class="mdi mdi-cube-outline mr-1"></i>添加直播</button>
 							    <button type="button" class="btn btn-danger mb-2 mr-2" data-toggle="modal" data-target="#batch_Import"><i class="mdi mdi-account-multiple-plus mr-1"></i>批量导入</button>
-							    <button type="button" class="btn btn-success mb-2 mr-2" data-toggle="modal" data-target="#sourceModal"><i class="mdi mdi-rss mr-1"></i>订阅源管理</button>
-							    <button type="button" class="btn btn-info mb-2 mr-2" id="syncSourcesBtn"><i class="mdi mdi-refresh mr-1"></i>一键同步所有线路</button>
+							    <button type="button" class="btn btn-success mb-2 mr-2" data-toggle="modal" data-target="#sourceModal"><i class="mdi mdi-rss mr-1"></i>订阅源管�?/button>
+							    <button type="button" class="btn btn-info mb-2 mr-2" id="syncSourcesBtn"><i class="mdi mdi-refresh mr-1"></i>一键同步所有线�?/button>
 								<select class="form-control" name="appids" onchange="get_screen(this.value,<?php echo $see;?>)">
 									<option value="0">全部</option>
 									<?php
@@ -96,8 +96,8 @@ $sql = "CREATE TABLE `{$DP}live` (
 								<label for="status-select" class="mr-2"></label>
 								<select class="form-control" name="see" id="see" onchange="get_screen(<?php echo $appid;?>,this.value)">
 									<option value="0" <?php if($see == 0) echo 'selected = "selected"'; ?>>全部</option>
-									<option value="1" <?php if($see == 1) echo 'selected = "selected"'; ?>>已填写</option>
-									<option value="2" <?php if($see == 2) echo 'selected = "selected"'; ?>>未填写</option>
+									<option value="1" <?php if($see == 1) echo 'selected = "selected"'; ?>>已填�?/option>
+									<option value="2" <?php if($see == 2) echo 'selected = "selected"'; ?>>未填�?/option>
 								</select>
 							</form>
 							
@@ -106,7 +106,7 @@ $sql = "CREATE TABLE `{$DP}live` (
 							<div class="text-lg-right">
 								<form action="" method="post">
 									<div class="input-group">
-										<input type="text" class="form-control" name="so" placeholder="显示名称、线路" value='<?php echo $so; ?>'>
+										<input type="text" class="form-control" name="so" placeholder="显示名称、线�? value='<?php echo $so; ?>'>
 										<span class="mdi mdi-magnify"></span>
 										<div class="input-group-append">
 											<button class="btn btn-primary" type="submit">搜索</button>
@@ -129,8 +129,8 @@ $sql = "CREATE TABLE `{$DP}live` (
                                     </th>
                                     <th style="width: 20px;"><center><span class="badge badge-light-lighten">ID</span></center></th>
                                     <th><center><span class="badge badge-light-lighten">显示名称</span></center></th>
-                                    <th><center><span class="badge badge-light-lighten">所属分类</span></center></th>
-                                    <th><center><span class="badge badge-light-lighten">源数据</span></center></th>
+                                    <th><center><span class="badge badge-light-lighten">所属分�?/span></center></th>
+                                    <th><center><span class="badge badge-light-lighten">源数�?/span></center></th>
                                     <th style="width: 75px;"><center><span class="badge badge-light-lighten">管理</span></center></th>
                                 </tr>
                             </thead>
@@ -187,7 +187,7 @@ $sql = "CREATE TABLE `{$DP}live` (
                                     
                                     <td>
     									<?php
-    									   ($rows['url']==""||$rows['url']=="0") ? $rows1['name']="无" : "" ;
+    									   ($rows['url']==""||$rows['url']=="0") ? $rows1['name']="�? : "" ;
     									    $res1 = Db::table('live_channeltype')->where(['id'=>$rows['url']])->select();
     									    foreach ($res1 as $k => $v){$rows1 = $res1[$k];}
     									?>
@@ -201,7 +201,7 @@ $sql = "CREATE TABLE `{$DP}live` (
                                     
                                     <td>
 										<center >
-											<?php if($rows['data'] ==''):?><span class="badge badge-danger">未填写<?php else: ?> <span class="badge badge-success">已填写<?php endif; ?>
+											<?php if($rows['data'] ==''):?><span class="badge badge-danger">未填�??php else: ?> <span class="badge badge-success">已填�??php endif; ?>
 										</center>
                                     </td>
                                     
@@ -292,7 +292,7 @@ $sql = "CREATE TABLE `{$DP}live` (
 						
 						<div class="form-group">
 							<label>账户数据 *</label>
-							<textarea class="form-control form-control-light mb-2" placeholder="格式:&#10;频道名,源地址&#10;例如:&#10;cctv1,http://xxx.com/cctv1.m3u8&#10;或&#10;cctv1,http://xxx.com/1.m3u8#http://nnn.com/1.m3u8&#10;禁止 空格/空行" id="data" name="data" rows="15" style="overflow-wrap: anywhere;"></textarea>
+							<textarea class="form-control form-control-light mb-2" placeholder="格式:&#10;频道�?源地址&#10;例如:&#10;cctv1,http://xxx.com/cctv1.m3u8&#10;�?#10;cctv1,http://xxx.com/1.m3u8#http://nnn.com/1.m3u8&#10;禁止 空格/空行" id="data" name="data" rows="15" style="overflow-wrap: anywhere;"></textarea>
 						</div>
                         
                         <div class="form-group">
@@ -334,7 +334,7 @@ $sql = "CREATE TABLE `{$DP}live` (
 		<div class="modal-dialog modal-lg">
 			<div class="modal-content">
 				<div class="modal-header">
-					<h4 class="modal-title"><i class="mdi mdi-rss mr-1"></i>订阅源管理</h4>
+					<h4 class="modal-title"><i class="mdi mdi-rss mr-1"></i>订阅源管�?/h4>
 					<button type="button" class="close" data-dismiss="modal" aria-hidden="true">×</button>
 				</div>
 				<div class="modal-body">
@@ -344,14 +344,14 @@ $sql = "CREATE TABLE `{$DP}live` (
 								<div class="card-body">
 									<h6 class="card-title"><i class="mdi mdi-link mr-1"></i>添加远程订阅URL</h6>
 									<div class="form-group">
-										<input class="form-control mb-2" type="text" id="src_name" placeholder="名称：如 移动源1">
+										<input class="form-control mb-2" type="text" id="src_name" placeholder="名称：如 移动�?">
 										<input class="form-control mb-2" type="text" id="src_url" placeholder="订阅URL：http://xxx.com/interface.m3u">
 										<select class="form-control mb-2" id="src_format">
 											<option value="auto">自动识别格式</option>
 											<option value="m3u">M3U 格式</option>
 											<option value="txt">TXT 格式</option>
 										</select>
-										<button class="btn btn-success btn-block" id="addRemoteSource"><i class="mdi mdi-plus mr-1"></i>添加远程源</button>
+										<button class="btn btn-success btn-block" id="addRemoteSource"><i class="mdi mdi-plus mr-1"></i>添加远程�?/button>
 									</div>
 								</div>
 							</div>
@@ -363,7 +363,7 @@ $sql = "CREATE TABLE `{$DP}live` (
 									<div class="form-group">
 										<input type="file" class="form-control-file mb-2" id="src_file" accept=".m3u,.txt,.xml">
 										<small class="text-muted mb-2 d-block">支持 .m3u / .txt / .xml 格式</small>
-										<button class="btn btn-primary btn-block" id="uploadLocalFile"><i class="mdi mdi-cloud-upload mr-1"></i>上传并导入</button>
+										<button class="btn btn-primary btn-block" id="uploadLocalFile"><i class="mdi mdi-cloud-upload mr-1"></i>上传并导�?/button>
 									</div>
 								</div>
 							</div>
@@ -383,12 +383,12 @@ $sql = "CREATE TABLE `{$DP}live` (
 											<th>名称</th>
 											<th>类型</th>
 											<th>URL/文件</th>
-											<th>状态</th>
+											<th>状�?/th>
 											<th>操作</th>
 										</tr>
 									</thead>
 									<tbody id="sourcesTableBody">
-										<tr><td colspan="6" class="text-center text-muted py-3">加载中...</td></tr>
+										<tr><td colspan="6" class="text-center text-muted py-3">加载�?..</td></tr>
 									</tbody>
 								</table>
 							</div>
@@ -472,7 +472,7 @@ $sql = "CREATE TABLE `{$DP}live` (
 			
 			$.ajax({
 				cache: false,
-				type: "POST",//请求的方式
+				type: "POST",//请求的方�?
 				url : "ajax.php?act=live_batchImport",//请求的文件名
 				data : {data:data,appid:appid,type:type},
 				dataType : 'json',
@@ -488,7 +488,7 @@ $sql = "CREATE TABLE `{$DP}live` (
 					}
 				}
 			});
-			return false;//重要语句：如果是像a链接那种有href属性注册的点击事件，可以阻止它跳转。
+			return false;//重要语句：如果是像a链接那种有href属性注册的点击事件，可以阻止它跳转�?
 		});
 		
 		$('#add_submit').click(function() {
@@ -500,7 +500,7 @@ $sql = "CREATE TABLE `{$DP}live` (
 			
 			$.ajax({
 				cache: false,
-				type: "POST",//请求的方式
+				type: "POST",//请求的方�?
 				url : "ajax.php?act=live_addlive",//请求的文件名
 				data : {
 				    name:add_name,
@@ -519,7 +519,7 @@ $sql = "CREATE TABLE `{$DP}live` (
 					}
 				}
 			});
-			return false;//重要语句：如果是像a链接那种有href属性注册的点击事件，可以阻止它跳转。
+			return false;//重要语句：如果是像a链接那种有href属性注册的点击事件，可以阻止它跳转�?
 		});
 	
 		function checkAll() {
@@ -542,7 +542,7 @@ $sql = "CREATE TABLE `{$DP}live` (
 			var id_array=new Array(); 
 			$("input[name='ids[]']:checked").each(function(){ 
 				id_array.push($(this).val());//向数组中添加元素 
-			}); //获取界面复选框的所有值
+			}); //获取界面复选框的所有�?
 			//ar chapterstr = id_array.join(',');//把复选框的值以数组形式存放
 			var url = window.location.href;
 			let t = window.jQuery;
@@ -550,14 +550,14 @@ $sql = "CREATE TABLE `{$DP}live` (
 				t.NotificationApp.send("提示","请选择要删除的项目","top-center","rgba(0,0,0,0.2)","warning")
 				return false;
 			}
-			document.getElementById("delsubmit").innerHTML="<div class=\"spinner-border spinner-border-sm mr-1\" style=\"margin-bottom:2px!important\" role=\"status\"></div>删除中";
+			document.getElementById("delsubmit").innerHTML="<div class=\"spinner-border spinner-border-sm mr-1\" style=\"margin-bottom:2px!important\" role=\"status\"></div>删除�?;
 			document.getElementById("delsubmit").className = "text-title";
 			$("#delsubmit").attr("disabled",true).css("pointer-events","none"); 
 			
 			console.log(id_array);
 			$.ajax({
 				cache: false,
-				type: "POST",//请求的方式
+				type: "POST",//请求的方�?
 				url : "ajax.php?act=live_dellive",//请求的文件名
 				data : {id:id_array},
 				dataType : 'json',
@@ -571,7 +571,7 @@ $sql = "CREATE TABLE `{$DP}live` (
 					window.setTimeout("window.location='"+url+"'",1000);
 				}
 			});
-			return false;//重要语句：如果是像a链接那种有href属性注册的点击事件，可以阻止它跳转。
+			return false;//重要语句：如果是像a链接那种有href属性注册的点击事件，可以阻止它跳转�?
 		}
 		
 		function edit_state(id,state) {
@@ -590,7 +590,7 @@ $sql = "CREATE TABLE `{$DP}live` (
 			
 			$.ajax({
 				cache: false,
-				type: "POST",//请求的方式
+				type: "POST",//请求的方�?
 				url : "ajax.php?act=live_state",//请求的文件名
 				data : {id:id,state:state},
 				dataType : 'json',
@@ -602,7 +602,7 @@ $sql = "CREATE TABLE `{$DP}live` (
 					}
 				}
 			});
-			return false;//重要语句：如果是像a链接那种有href属性注册的点击事件，可以阻止它跳转。
+			return false;//重要语句：如果是像a链接那种有href属性注册的点击事件，可以阻止它跳转�?
 		}
 		
 		function get_screen(appids,see){
@@ -629,7 +629,7 @@ $sql = "CREATE TABLE `{$DP}live` (
 		    var id_array=new Array();
             $("input[name='ids[]']:checked").each(function(){ 
             id_array.push($(this).val());//向数组中添加元素
-			}); //获取界面复选框的所有值
+			}); //获取界面复选框的所有�?
             let t = window.jQuery;
             var types = $("#types").val();
             if(id_array.length<=0){
@@ -640,7 +640,7 @@ $sql = "CREATE TABLE `{$DP}live` (
             document.getElementById('class_submit').disabled=true;
             $.ajax({
 	            cache: false,
-	            type: "POST",//请求的方式
+	            type: "POST",//请求的方�?
 	            url : 'ajax.php?act=live_modifyclass',//请求的文件名
 	            data : {id:id_array,
 	                    types:types
@@ -657,7 +657,7 @@ $sql = "CREATE TABLE `{$DP}live` (
 				    }
 			    }
             });
-            return false;//重要语句：如果是像a链接那种有href属性注册的点击事件，可以阻止它跳转。
+            return false;//重要语句：如果是像a链接那种有href属性注册的点击事件，可以阻止它跳转�?
         });
         
         
@@ -677,7 +677,7 @@ $sql = "CREATE TABLE `{$DP}live` (
 			
 			$.ajax({
 				cache: false,
-				type: "POST",//请求的方式
+				type: "POST",//请求的方�?
 				url : "ajax.php?act=live_classtype",//请求的文件名
 				data : {
 					id:id,
@@ -699,19 +699,20 @@ $sql = "CREATE TABLE `{$DP}live` (
 			return false;
 		});
 
-		var ruyiApiUrl = '/ruyi/ruyi_api.php';
+		var ruyiApi = '/ruyi/ruyi_api.php';
+		function apiUrl(a){ return ruyiApi + '?action=' + a; }
 
 		function loadSourcesList() {
-			$.getJSON(ruyiApiUrl + '&action=list', function(res) {
+			$.getJSON(apiUrl('list'), function(res) {
 				var tbody = $('#sourcesTableBody');
 				tbody.empty();
-				if (!res.sources || res.sources.length === 0) {
+				if (!res.data || !res.data.sources || res.data.sources.length === 0) {
 					tbody.html('<tr><td colspan="6" class="text-center text-muted py-3">暂无订阅源，请先添加</td></tr>');
 					return;
 				}
 				var typeLabel = { remote: '<span class="badge badge-info">远程URL</span>', local: '<span class="badge badge-warning">本地文件</span>' };
-				var stateLabel = { enabled: '<span class="badge badge-success">启用</span>', disabled: '<span class="badge badge-secondary">停用</span>' };
-				res.sources.forEach(function(s) {
+				var stateLabel = { 1: '<span class="badge badge-success">启用</span>', 0: '<span class="badge badge-secondary">停用</span>' };
+				res.data.sources.forEach(function(s) {
 					var urlOrFile = s.type === 'remote' ? s.url : s.file;
 					var shortUrl = urlOrFile.length > 45 ? urlOrFile.substring(0, 45) + '...' : urlOrFile;
 					var row = '<tr data-id="' + s.id + '">' +
@@ -719,15 +720,17 @@ $sql = "CREATE TABLE `{$DP}live` (
 						'<td><center>' + s.name + '</center></td>' +
 						'<td><center>' + (typeLabel[s.type] || s.type) + '</center></td>' +
 						'<td title="' + urlOrFile + '"><code style="font-size:11px;">' + shortUrl + '</code></td>' +
-						'<td><center>' + (s.state == 1 ? stateLabel.enabled : stateLabel.disabled) + '</center></td>' +
+						'<td><center>' + (s.state == 1 ? stateLabel[1] : stateLabel[0]) + '</center></td>' +
 						'<td><center>' +
 							'<button class="btn btn-xs btn-warning toggleSrc" data-id="' + s.id + '" data-state="' + s.state + '" title="启/停"><i class="mdi mdi-power"></i></button> ' +
 							'<button class="btn btn-xs btn-danger delSrc" data-id="' + s.id + '" data-name="' + s.name + '" title="删除"><i class="mdi mdi-delete"></i></button>' +
 						'</center></td></tr>';
 					tbody.append(row);
 				});
-			}).fail(function() {
-				$('#sourcesTableBody').html('<tr><td colspan="6" class="text-center text-danger py-3">加载失败，检查 RuyiMerger 类是否存在</td></tr>');
+			}).fail(function(xhr) {
+				var msg = '加载失败，请检查 ruyi_api.php 是否可访问';
+				if (xhr && xhr.responseText) msg += ' (' + xhr.responseText.substring(0, 100) + ')';
+				$('#sourcesTableBody').html('<tr><td colspan="6" class="text-center text-danger py-3">' + msg + '</td></tr>');
 			});
 		}
 
@@ -741,7 +744,7 @@ $sql = "CREATE TABLE `{$DP}live` (
 			if (!name || !url) { alert('请填写名称和URL'); return; }
 			var $btn = $(this);
 			$btn.prop('disabled', true).html('<i class="mdi mdi-loading mdi-spin"></i> 添加中...');
-			$.post(ruyiApiUrl + '&action=add_source', { name: name, url: url, format: fmt, type: 'remote' }, function(res) {
+			$.post(apiUrl('add_source'), { name: name, url: url, format: fmt, type: 'remote' }, function(res) {
 				$btn.prop('disabled', false).html('<i class="mdi mdi-plus mr-1"></i>添加远程源');
 				if (res.code === 200) {
 					t.NotificationApp.send('成功', res.msg, 'top-center', 'rgba(0,0,0,0.2)', 'success');
@@ -764,7 +767,7 @@ $sql = "CREATE TABLE `{$DP}live` (
 			var $btn = $(this);
 			$btn.prop('disabled', true).html('<i class="mdi mdi-loading mdi-spin"></i> 上传中...');
 			$.ajax({
-				url: ruyiApiUrl + '&action=upload_file',
+				url: apiUrl('upload_file'),
 				type: 'POST',
 				data: fd,
 				processData: false,
@@ -791,7 +794,7 @@ $sql = "CREATE TABLE `{$DP}live` (
 			var id = $(this).data('id');
 			var name = $(this).data('name');
 			if (!confirm('确定删除订阅源「' + name + '」吗？')) return;
-			$.post(ruyiApiUrl + '&action=del_source', { id: id }, function(res) {
+			$.post(apiUrl('del_source'), { id: id }, function(res) {
 				if (res.code === 200) {
 					t.NotificationApp.send('成功', res.msg, 'top-center', 'rgba(0,0,0,0.2)', 'success');
 					loadSourcesList();
@@ -804,7 +807,7 @@ $sql = "CREATE TABLE `{$DP}live` (
 		$(document).on('click', '.toggleSrc', function() {
 			var id = $(this).data('id');
 			var state = $(this).data('state') == 1 ? 0 : 1;
-			$.post(ruyiApiUrl + '&action=toggle_source', { id: id, state: state }, function(res) {
+			$.post(apiUrl('toggle_source'), { id: id, state: state }, function(res) {
 				if (res.code === 200) {
 					loadSourcesList();
 				} else {
@@ -816,13 +819,13 @@ $sql = "CREATE TABLE `{$DP}live` (
 		$('#syncSourcesBtn').click(function() {
 			var $btn = $(this);
 			$btn.prop('disabled', true).html('<i class="mdi mdi-loading mdi-spin mr-1"></i>正在同步所有线路...');
-			$.post(ruyiApiUrl + '&action=sync', function(res) {
+			$.post(apiUrl('sync'), function(res) {
 				$btn.prop('disabled', false).html('<i class="mdi mdi-refresh mr-1"></i>一键同步所有线路');
 				var box = $('#sourceStatusBox');
 				box.removeClass('alert alert-success alert-danger');
 				if (res.code === 200) {
-					box.addClass('alert alert-success').html('<i class="mdi mdi-check-circle mr-1"></i><b>同步完成！</b> 合并 ' + (res.channels_count || 0) + ' 个频道，' + (res.sources_count || 0) + ' 条线路。');
-					t.NotificationApp.send('成功', '同步完成：' + (res.channels_count || 0) + ' 个频道', 'top-center', 'rgba(0,0,0,0.2)', 'success');
+					box.addClass('alert alert-success').html('<i class="mdi mdi-check-circle mr-1"></i><b>同步完成！</b> 合并 ' + (res.data.channels_count || 0) + ' 个频道，' + (res.data.sources_count || 0) + ' 条线路。');
+					t.NotificationApp.send('成功', '同步完成：' + (res.data.channels_count || 0) + ' 个频道', 'top-center', 'rgba(0,0,0,0.2)', 'success');
 					loadSourcesList();
 				} else {
 					box.addClass('alert alert-danger').html('<i class="mdi mdi-alert mr-1"></i><b>同步失败：</b> ' + (res.msg || '未知错误'));
