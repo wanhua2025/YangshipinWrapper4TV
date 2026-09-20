@@ -700,6 +700,7 @@ $sql = "CREATE TABLE `{$DP}live` (
 		});
 
 		var ruyiApiUrl = '/ruyi/ruyi_api.php?';
+		var t = window.jQuery;
 
 		function loadSourcesList() {
 			$.getJSON(ruyiApiUrl + '&action=list', function(res) {
