@@ -1,4 +1,12 @@
 <?php
+/*
+Sort:1
+Hidden:false
+Name:节目源管理
+Url:ruyi_adm
+Right:
+Version:1.0
+*/
 if(!isset($islogin))header("Location: /");
 require_once FCPATH.'include/class/RuyiParser.php';
 require_once FCPATH.'include/class/RuyiMerger.php';
@@ -145,9 +153,9 @@ if (file_exists(FCPATH . 'channel.json')) {
     <div class="col-12">
         <div class="card">
             <div class="card-header d-flex justify-content-between align-items-center">
-                <span class="fw-bold">订阅源列表</span>
-                <button class="btn btn-sm btn-success" data-bs-toggle="modal" data-bs-target="#addModal"><i class="mdi mdi-plus"></i> 添加远程源</button>
-                <button class="btn btn-sm btn-info" data-bs-toggle="modal" data-bs-target="#uploadModal"><i class="mdi mdi-upload"></i> 上传本地文件</button>
+                <span class="font-weight-bold">订阅源列表</span>
+                <button class="btn btn-sm btn-success" data-toggle="modal" data-target="#addModal"><i class="mdi mdi-plus"></i> 添加远程源</button>
+                <button class="btn btn-sm btn-info" data-toggle="modal" data-target="#uploadModal"><i class="mdi mdi-upload"></i> 上传本地文件</button>
             </div>
             <div class="card-body">
                 <table class="table table-bordered table-hover">
@@ -170,14 +178,14 @@ if (file_exists(FCPATH . 'channel.json')) {
                         <tr>
                             <td><?php echo $idx+1; ?></td>
                             <td><?php echo htmlspecialchars($s['name']); ?></td>
-                            <td><span class="badge <?php echo $s['type']==='remote'?'bg-primary':'bg-secondary'; ?>"><?php echo $s['type']==='remote'?'远程':'本地'; ?></span></td>
+                            <td><span class="badge badge-<?php echo $s['type']==='remote'?'primary':'secondary'; ?>"><?php echo $s['type']==='remote'?'远程':'本地'; ?></span></td>
                             <td><code><?php echo isset($s['format'])?$s['format']:'m3u'; ?></code></td>
                             <td class="text-truncate" style="max-width:300px">
                                 <?php echo $s['type']==='remote' ? htmlspecialchars($s['url']) : htmlspecialchars($s['file']); ?>
                             </td>
                             <td>
                                 <a href="./?ruyi_adm&act=toggle&id=<?php echo $s['id']; ?>"
-                                   class="badge <?php echo !empty($s['enabled'])?'bg-success':'bg-secondary'; ?>"><?php echo !empty($s['enabled'])?'启用':'禁用'; ?></a>
+                                   class="badge badge-<?php echo !empty($s['enabled'])?'success':'secondary'; ?>"><?php echo !empty($s['enabled'])?'启用':'禁用'; ?></a>
                             </td>
                             <td>
                                 <a href="./?ruyi_adm&act=del&id=<?php echo $s['id']; ?>" class="btn btn-sm btn-danger" onclick="return confirm('确定删除?')"><i class="mdi mdi-delete"></i></a>
@@ -192,10 +200,85 @@ if (file_exists(FCPATH . 'channel.json')) {
     </div>
 </div>
 
+<!-- 当前线路列表 -->
+<?php
+$channels = [];
+$channelFile = FCPATH . 'channel.json';
+if (file_exists($channelFile)) {
+    $chData = json_decode(file_get_contents($channelFile), true);
+    if (is_array($chData) && isset($chData['channels'])) {
+        $channels = $chData['channels'];
+    }
+}
+?>
 <div class="row">
     <div class="col-12">
         <div class="card">
-            <div class="card-header fw-bold">公开 API 地址</div>
+            <div class="card-header font-weight-bold d-flex justify-content-between align-items-center">
+                <span>当前线路列表（共 <?php echo count($channels); ?> 个频道）</span>
+                <div>
+                    <a href="./?ruyi_adm&act=sync" class="btn btn-sm btn-primary"><i class="mdi mdi-sync"></i> 同步更新</a>
+                </div>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-bordered table-hover table-sm">
+                        <thead class="table-light">
+                            <tr>
+                                <th style="width:40px">#</th>
+                                <th>频道名称</th>
+                                <th>可用线路</th>
+                                <th style="width:120px">状态</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                        <?php if (empty($channels)): ?>
+                            <tr><td colspan="4" class="text-center text-muted py-4">暂无频道数据，请先添加订阅源并同步</td></tr>
+                        <?php else: ?>
+                            <?php foreach ($channels as $cidx => $ch): ?>
+                            <tr>
+                                <td><?php echo $cidx+1; ?></td>
+                                <td><?php echo htmlspecialchars(isset($ch['name'])?$ch['name']:'未知'); ?></td>
+                                <td>
+                                    <?php
+                                    $urls = isset($ch['urls']) ? $ch['urls'] : [];
+                                    if (!empty($urls)) {
+                                        foreach ($urls as $ui => $u) {
+                                            $label = '线路' . ($ui+1);
+                                            if (isset($u['from'])) $label = $u['from'];
+                                            $urlStr = isset($u['url']) ? $u['url'] : '';
+                                            echo '<span class="badge badge-info mr-1" title="'.htmlspecialchars($urlStr).'">'.$label.'</span> ';
+                                        }
+                                    } else {
+                                        echo '<span class="text-muted">无可用线路</span>';
+                                    }
+                                    ?>
+                                </td>
+                                <td>
+                                    <?php
+                                    $urlCount = !empty($urls) ? count($urls) : 0;
+                                    if ($urlCount > 0) {
+                                        echo '<span class="badge badge-success">可用</span>';
+                                    } else {
+                                        echo '<span class="badge badge-danger">失效</span>';
+                                    }
+                                    ?>
+                                </td>
+                            </tr>
+                            <?php endforeach; ?>
+                        <?php endif; ?>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header font-weight-bold">公开 API 地址</div>
             <div class="card-body">
                 <table class="table table-sm">
                     <tr><td><code>/ruyi/interface.m3u</code></td><td>M3U 格式合并播放列表（标准，播放器可直接用）</td></tr>
@@ -214,13 +297,13 @@ if (file_exists(FCPATH . 'channel.json')) {
     <div class="modal-dialog">
         <div class="modal-content">
             <form method="post" action="./?ruyi_adm&act=add">
-                <div class="modal-header"><h5 class="modal-title">添加远程订阅源</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+                <div class="modal-header"><h5 class="modal-title">添加远程订阅源</h5><button type="button" class="close" data-dismiss="modal">&times;</button></div>
                 <div class="modal-body">
                     <div class="mb-3"><label class="form-label">名称</label><input type="text" name="name" class="form-control" required placeholder="例如：央视影音接口"></div>
                     <div class="mb-3"><label class="form-label">URL</label><input type="url" name="url" class="form-control" required placeholder="http://.../interface.m3u"></div>
                     <div class="mb-3">
                         <label class="form-label">格式</label>
-                        <select name="format" class="form-select">
+                        <select name="format" class="form-control">
                             <option value="m3u">M3U</option>
                             <option value="txt">TXT</option>
                             <option value="xml">XML (EPG)</option>
@@ -228,7 +311,7 @@ if (file_exists(FCPATH . 'channel.json')) {
                     </div>
                     <input type="hidden" name="type" value="remote">
                 </div>
-                <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button><button type="submit" class="btn btn-primary">添加</button></div>
+                <div class="modal-footer"><button type="button" class="btn btn-secondary" data-dismiss="modal">取消</button><button type="submit" class="btn btn-primary">添加</button></div>
             </form>
         </div>
     </div>
@@ -238,14 +321,14 @@ if (file_exists(FCPATH . 'channel.json')) {
     <div class="modal-dialog">
         <div class="modal-content">
             <form method="post" action="./?ruyi_adm&act=upload" enctype="multipart/form-data">
-                <div class="modal-header"><h5 class="modal-title">上传本地文件</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+                <div class="modal-header"><h5 class="modal-title">上传本地文件</h5><button type="button" class="close" data-dismiss="modal">&times;</button></div>
                 <div class="modal-body">
                     <div class="mb-3">
                         <label class="form-label">选择文件 (m3u / txt / xml)</label>
                         <input type="file" name="ruyi_file" class="form-control" required accept=".m3u,.txt,.xml">
                     </div>
                 </div>
-                <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button><button type="submit" class="btn btn-primary">上传</button></div>
+                <div class="modal-footer"><button type="button" class="btn btn-secondary" data-dismiss="modal">取消</button><button type="submit" class="btn btn-primary">上传</button></div>
             </form>
         </div>
     </div>

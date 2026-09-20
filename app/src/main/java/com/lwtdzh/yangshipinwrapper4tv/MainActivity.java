@@ -22,6 +22,7 @@ import android.os.Looper;
 import android.provider.Settings;
 import android.text.SpannableString;
 import android.text.Spanned;
+import android.text.style.ForegroundColorSpan;
 import android.text.style.RelativeSizeSpan;
 import android.util.Log;
 import android.view.Gravity;
@@ -75,6 +76,7 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -92,16 +94,14 @@ import androidx.media3.exoplayer.mediacodec.MediaCodecSelector;
 public class MainActivity extends Activity {
     private static final String TAG = "YSPTV";
     private static final String YSP_HOME_URL = "https://www.yangshipin.cn/tv/home";
-    private static final String M3U_URL = "http://124.223.198.234:1905/interface.m3u";
+    private static final String M3U_URL = "http://ry.400239.com/ruyi/interface.m3u";
     private static final String PREFS = "yangshipin_tv";
-    private static final String PREF_QUALITY = "quality";
     private static final String PREF_CHANNEL_PID = "channel_pid";
     private static final String PREF_PLAYBACK_MODE = "playback_mode";
     private static final String PREF_AUTO_START = "auto_start_on_boot";
     private static final String PLAYBACK_MODE_HW = "hw";
     private static final String PLAYBACK_MODE_SW = "sw";
-    private static final String[] QUALITY_ORDER = new String[]{"hd", "shd", "fhd"};
-    private static final String PLAYBACK_HELP_TEXT = "按上下键换台，按OK键打开频道列表，按左右切换清晰度";
+    private static final String PLAYBACK_HELP_TEXT = "按上下键换台，按OK键打开频道列表，按右键切换线路";
     private static final int MENU_PAGE_GROUPS = 2;
     private static final int MENU_PAGE_GROUP_CHANNELS = 3;
     private static final int MENU_PAGE_CHANNELS = 0;
@@ -122,7 +122,6 @@ public class MainActivity extends Activity {
         }
     };
     private final List<Channel> channels = new ArrayList<Channel>();
-    private final Set<String> badUrls = new HashSet<>();
     private static final Map<String, String> CHANNEL_NAME_MAP = new HashMap<>();
     static {
         CHANNEL_NAME_MAP.put("CCTV1", "CCTV-1 综合");
@@ -185,7 +184,6 @@ public class MainActivity extends Activity {
     private boolean focusOnGroupSide = true;
     private SharedPreferences preferences;
 
-    private String preferredQuality = "fhd";
     private String activeRequestId = "";
     private int requestCounter = 0;
     private int currentIndex = 0;
@@ -302,10 +300,6 @@ public class MainActivity extends Activity {
         installTlsCompatIfNeeded();
         preferences = getSharedPreferences(PREFS, MODE_PRIVATE);
         touchSlop = ViewConfiguration.get(this).getScaledTouchSlop();
-        preferredQuality = preferences.getString(PREF_QUALITY, "fhd");
-        if (qualityIndex(preferredQuality) < 0) {
-            preferredQuality = "fhd";
-        }
         playbackMode = preferences.getString(PREF_PLAYBACK_MODE, PLAYBACK_MODE_HW);
         if (!PLAYBACK_MODE_SW.equals(playbackMode)) {
             playbackMode = PLAYBACK_MODE_HW;
@@ -542,7 +536,12 @@ public class MainActivity extends Activity {
             @Override
             public void onPlayerError(PlaybackException error) {
                 Log.e(TAG, "exo_player_error", error);
-                showCenterMessage("线路暂时维护中...", 4000);
+                boolean switched = switchToNextLine(true);
+                if (switched) {
+                    Log.i(TAG, "auto_switch_line on_player_error");
+                } else {
+                    showCenterMessage("线路暂时维护中...", 4000);
+                }
             }
         });
     }
@@ -589,11 +588,279 @@ public class MainActivity extends Activity {
         }).start();
     }
 
+    private String normalizeChannelName(String raw) {
+        if (raw == null) return "";
+        String n = raw.trim();
+        n = n.replaceAll("^\\[[^\\]]*\\]\\s*", "");
+        n = n.replaceAll("[\\(（][^\\)）]*[\\)）]", "");
+        n = n.replaceAll("\\s*[-_\\s]\\s*(高清|超清|蓝光|流畅|原画|极速|标清|原画|低码|高码)\\b", "");
+        n = n.replaceAll("\\b(高清|超清|蓝光|流畅|原画|极速|标清)\\b\\s*[-_]?\\s*", "");
+        n = n.replaceAll("\\s*[-_]\\s*(HD|FHD|4K|SD|LD|原画)\\b", "");
+        n = n.replaceAll("\\b(HD|FHD|4K|SD|LD)\\b\\s*[-_]?\\s*", "");
+        n = n.replaceAll("\\s*[-_]\\s*\\d+[号号频道]?\\s*$", "");
+        n = n.replaceAll("\\s+", " ").trim();
+        java.util.regex.Matcher cctv = java.util.regex.Pattern.compile("(?i)^(CCTV)\\s*[-_\\s]*(\\d+).*").matcher(n);
+        if (cctv.matches()) {
+            n = cctv.group(1).toUpperCase() + "-" + cctv.group(2);
+        }
+        return n;
+    }
+
+    private String canonicalDisplayName(String normalized) {
+        if (CHANNEL_NAME_MAP.containsKey(normalized)) return CHANNEL_NAME_MAP.get(normalized);
+        return normalized;
+    }
+
+    private String rewriteGroup(String rawGroup, String channelName) {
+        if (rawGroup == null) rawGroup = "默认";
+        if (rawGroup.equals("更新时间")) return null;
+
+        if (channelName != null && channelName.contains("卫视")) return "卫视";
+
+        if (rawGroup.equals("央视频道")) return "央视频";
+        if (rawGroup.equals("卫视频道")) return "卫视";
+
+        if (rawGroup.equals("地方频道")) {
+            String prov = findProvinceByChannelName(channelName);
+            if (prov != null) return prov;
+            return "地方频道";
+        }
+
+        if (rawGroup.contains("景观") || rawGroup.contains("风景")) {
+            String prov = findProvinceByGroup(rawGroup);
+            if (prov != null) return prov;
+        }
+
+        String prov = findProvinceByGroup(rawGroup);
+        if (prov != null) return prov;
+
+        return rawGroup;
+    }
+
+    private static final String[][] CITY_PROVINCE = {
+            {"北京", "北京"}, {"天津", "天津"}, {"河北", "河北"}, {"山西", "山西"},
+            {"内蒙古", "内蒙古"}, {"辽宁", "辽宁"}, {"吉林", "吉林"}, {"黑龙江", "黑龙江"},
+            {"上海", "上海"}, {"江苏", "江苏"}, {"浙江", "浙江"}, {"安徽", "安徽"},
+            {"福建", "福建"}, {"江西", "江西"}, {"山东", "山东"}, {"河南", "河南"},
+            {"湖北", "湖北"}, {"湖南", "湖南"}, {"广东", "广东"}, {"广西", "广西"},
+            {"海南", "海南"}, {"重庆", "重庆"}, {"四川", "四川"}, {"贵州", "贵州"},
+            {"云南", "云南"}, {"西藏", "西藏"}, {"陕西", "陕西"}, {"甘肃", "甘肃"},
+            {"青海", "青海"}, {"宁夏", "宁夏"}, {"新疆", "新疆"},
+            {"香港", "香港"}, {"澳门", "澳门"}, {"台湾", "台湾"},
+            {"兵团", "新疆"}, {"伊犁", "新疆"}, {"可克达拉", "新疆"}, {"奎屯", "新疆"},
+            {"石河子", "新疆"}, {"双河", "新疆"}, {"玛纳斯", "新疆"},
+            {"青岛", "山东"}, {"烟台", "山东"}, {"济南", "山东"}, {"临沂", "山东"},
+            {"泰安", "山东"}, {"威海", "山东"}, {"潍坊", "山东"},
+            {"南京", "江苏"}, {"苏州", "江苏"}, {"无锡", "江苏"}, {"常州", "江苏"},
+            {"镇江", "江苏"}, {"扬州", "江苏"}, {"泰州", "江苏"}, {"淮安", "江苏"},
+            {"盐城", "江苏"}, {"宿迁", "江苏"}, {"徐州", "江苏"}, {"南通", "江苏"},
+            {"连云港", "江苏"},
+            {"杭州", "浙江"}, {"宁波", "浙江"}, {"温州", "浙江"}, {"嘉兴", "浙江"},
+            {"湖州", "浙江"}, {"绍兴", "浙江"}, {"金华", "浙江"}, {"衢州", "浙江"},
+            {"舟山", "浙江"}, {"台州", "浙江"}, {"丽水", "浙江"},
+            {"海宁", "浙江"}, {"平湖", "浙江"}, {"余姚", "浙江"}, {"慈溪", "浙江"},
+            {"上虞", "浙江"}, {"嵊州", "浙江"}, {"新昌", "浙江"}, {"诸暨", "浙江"},
+            {"萧山", "浙江"}, {"余杭", "浙江"}, {"东阳", "浙江"}, {"义乌", "浙江"},
+            {"兰溪", "浙江"}, {"永康", "浙江"}, {"武义", "浙江"}, {"缙云", "浙江"},
+            {"云和", "浙江"}, {"松阳", "浙江"}, {"遂昌", "浙江"}, {"龙泉", "浙江"},
+            {"庆元", "浙江"}, {"青田", "浙江"}, {"乐清", "浙江"}, {"永嘉", "浙江"},
+            {"苍南", "浙江"}, {"洞头", "浙江"}, {"文成", "浙江"}, {"泰顺", "浙江"},
+            {"开化", "浙江"}, {"龙游", "浙江"}, {"衢江", "浙江"}, {"普陀", "浙江"},
+            {"嵊泗", "浙江"}, {"象山", "浙江"},
+            {"合肥", "安徽"}, {"芜湖", "安徽"}, {"蚌埠", "安徽"}, {"淮南", "安徽"},
+            {"马鞍山", "安徽"}, {"淮北", "安徽"}, {"铜陵", "安徽"}, {"安庆", "安徽"},
+            {"黄山", "安徽"}, {"滁州", "安徽"}, {"六安", "安徽"}, {"池州", "安徽"},
+            {"亳州", "安徽"}, {"宣城", "安徽"}, {"阜阳", "安徽"},
+            {"祁门", "安徽"}, {"广德", "安徽"}, {"固镇", "安徽"},
+            {"福州", "福建"}, {"厦门", "福建"}, {"泉州", "福建"}, {"漳州", "福建"},
+            {"莆田", "福建"}, {"三明", "福建"}, {"南平", "福建"}, {"龙岩", "福建"},
+            {"宁德", "福建"}, {"云霄", "福建"},
+            {"南昌", "江西"}, {"九江", "江西"}, {"赣州", "江西"}, {"吉安", "江西"},
+            {"上饶", "江西"}, {"宜春", "江西"}, {"抚州", "江西"},
+            {"郑州", "河南"}, {"开封", "河南"}, {"洛阳", "河南"}, {"平顶山", "河南"},
+            {"安阳", "河南"}, {"鹤壁", "河南"}, {"新乡", "河南"}, {"焦作", "河南"},
+            {"濮阳", "河南"}, {"许昌", "河南"}, {"漯河", "河南"}, {"三门峡", "河南"},
+            {"南阳", "河南"}, {"商丘", "河南"}, {"信阳", "河南"}, {"周口", "河南"},
+            {"驻马店", "河南"}, {"荥阳", "河南"}, {"永城", "河南"}, {"新野", "河南"},
+            {"武汉", "湖北"}, {"黄石", "湖北"}, {"十堰", "湖北"}, {"宜昌", "湖北"},
+            {"襄阳", "湖北"}, {"鄂州", "湖北"}, {"荆门", "湖北"}, {"孝感", "湖北"},
+            {"荆州", "湖北"}, {"黄冈", "湖北"}, {"咸宁", "湖北"}, {"随州", "湖北"},
+            {"恩施", "湖北"}, {"江夏", "湖北"},
+            {"长沙", "湖南"}, {"株洲", "湖南"}, {"湘潭", "湖南"}, {"衡阳", "湖南"},
+            {"邵阳", "湖南"}, {"岳阳", "湖南"}, {"常德", "湖南"}, {"张家界", "湖南"},
+            {"益阳", "湖南"}, {"郴州", "湖南"}, {"永州", "湖南"}, {"怀化", "湖南"},
+            {"娄底", "湖南"},
+            {"广州", "广东"}, {"深圳", "广东"}, {"珠海", "广东"}, {"汕头", "广东"},
+            {"佛山", "广东"}, {"韶关", "广东"}, {"湛江", "广东"}, {"肇庆", "广东"},
+            {"江门", "广东"}, {"茂名", "广东"}, {"惠州", "广东"}, {"梅州", "广东"},
+            {"汕尾", "广东"}, {"河源", "广东"}, {"阳江", "广东"}, {"清远", "广东"},
+            {"东莞", "广东"}, {"中山", "广东"}, {"潮州", "广东"}, {"揭阳", "广东"},
+            {"云浮", "广东"}, {"番禺", "广东"},
+            {"南宁", "广西"}, {"柳州", "广西"}, {"桂林", "广西"}, {"梧州", "广西"},
+            {"北海", "广西"}, {"防城港", "广西"}, {"钦州", "广西"}, {"贵港", "广西"},
+            {"玉林", "广西"}, {"百色", "广西"}, {"贺州", "广西"}, {"河池", "广西"},
+            {"来宾", "广西"}, {"崇左", "广西"}, {"灌阳", "广西"},
+            {"海口", "海南"}, {"三亚", "海南"},
+            {"万州", "重庆"}, {"铜梁", "重庆"}, {"璧山", "重庆"},
+            {"成都", "四川"}, {"自贡", "四川"}, {"攀枝花", "四川"}, {"泸州", "四川"},
+            {"德阳", "四川"}, {"绵阳", "四川"}, {"广元", "四川"}, {"遂宁", "四川"},
+            {"内江", "四川"}, {"乐山", "四川"}, {"南充", "四川"}, {"眉山", "四川"},
+            {"宜宾", "四川"}, {"广安", "四川"}, {"达州", "四川"}, {"雅安", "四川"},
+            {"巴中", "四川"}, {"资阳", "四川"}, {"阿坝", "四川"}, {"甘孜", "四川"},
+            {"凉山", "四川"},
+            {"剑阁", "四川"}, {"青川", "四川"}, {"朝天", "四川"}, {"旺苍", "四川"},
+            {"夹江", "四川"}, {"井研", "四川"}, {"沐川", "四川"},
+            {"仁寿", "四川"}, {"乐至", "四川"}, {"荥经", "四川"}, {"名山", "四川"},
+            {"松潘", "四川"}, {"汶川", "四川"}, {"泸县", "四川"}, {"营山", "四川"},
+            {"贵阳", "贵州"}, {"六盘水", "贵州"}, {"遵义", "贵州"}, {"安顺", "贵州"},
+            {"昆明", "云南"}, {"曲靖", "云南"}, {"玉溪", "云南"}, {"保山", "云南"},
+            {"昭通", "云南"}, {"丽江", "云南"}, {"普洱", "云南"}, {"临沧", "云南"},
+            {"楚雄", "云南"}, {"红河", "云南"}, {"文山", "云南"}, {"西双版纳", "云南"},
+            {"大理", "云南"}, {"德宏", "云南"}, {"怒江", "云南"}, {"迪庆", "云南"},
+            {"通海", "云南"}, {"易门", "云南"},
+            {"西安", "陕西"}, {"铜川", "陕西"}, {"宝鸡", "陕西"}, {"咸阳", "陕西"},
+            {"渭南", "陕西"}, {"延安", "陕西"}, {"汉中", "陕西"}, {"榆林", "陕西"},
+            {"安康", "陕西"}, {"商洛", "陕西"},
+            {"兰州", "甘肃"}, {"嘉峪关", "甘肃"}, {"金昌", "甘肃"}, {"白银", "甘肃"},
+            {"天水", "甘肃"}, {"武威", "甘肃"}, {"张掖", "甘肃"}, {"平凉", "甘肃"},
+            {"酒泉", "甘肃"}, {"庆阳", "甘肃"}, {"定西", "甘肃"}, {"陇南", "甘肃"},
+            {"临夏", "甘肃"}, {"甘南", "甘肃"},
+            {"西峰", "甘肃"}, {"永昌", "甘肃"}, {"天祝", "甘肃"}, {"渭源", "甘肃"},
+            {"西宁", "青海"}, {"海东", "青海"},
+            {"银川", "宁夏"}, {"石嘴山", "宁夏"}, {"吴忠", "宁夏"}, {"固原", "宁夏"},
+            {"中卫", "宁夏"},
+            {"呼和浩特", "内蒙古"}, {"包头", "内蒙古"}, {"乌海", "内蒙古"},
+            {"赤峰", "内蒙古"}, {"通辽", "内蒙古"}, {"鄂尔多斯", "内蒙古"},
+            {"呼伦贝尔", "内蒙古"}, {"巴彦淖尔", "内蒙古"}, {"乌兰察布", "内蒙古"},
+            {"兴安盟", "内蒙古"}, {"锡林郭勒", "内蒙古"}, {"阿拉善", "内蒙古"},
+            {"长春", "吉林"}, {"吉林", "吉林"}, {"四平", "吉林"}, {"辽源", "吉林"},
+            {"通化", "吉林"}, {"白山", "吉林"}, {"松原", "吉林"}, {"白城", "吉林"},
+            {"延边", "吉林"},
+            {"梅河口", "吉林"}, {"桦甸", "吉林"}, {"舒兰", "吉林"}, {"磐石", "吉林"},
+            {"蛟河", "吉林"}, {"德惠", "吉林"}, {"九台", "吉林"}, {"榆树", "吉林"},
+            {"农安", "吉林"}, {"东丰", "吉林"}, {"辉南", "吉林"}, {"柳河", "吉林"},
+            {"集安", "吉林"}, {"靖宇", "吉林"}, {"长白", "吉林"}, {"抚松", "吉林"},
+            {"临江", "吉林"}, {"和龙", "吉林"}, {"敦化", "吉林"}, {"龙井", "吉林"},
+            {"图们", "吉林"}, {"汪清", "吉林"},
+            {"哈尔滨", "黑龙江"}, {"齐齐哈尔", "黑龙江"}, {"鸡西", "黑龙江"},
+            {"鹤岗", "黑龙江"}, {"双鸭山", "黑龙江"}, {"大庆", "黑龙江"},
+            {"伊春", "黑龙江"}, {"佳木斯", "黑龙江"}, {"七台河", "黑龙江"},
+            {"牡丹江", "黑龙江"}, {"黑河", "黑龙江"}, {"绥化", "黑龙江"},
+            {"大兴安岭", "黑龙江"},
+            {"甘南", "黑龙江"},
+            {"石家庄", "河北"}, {"唐山", "河北"}, {"秦皇岛", "河北"},
+            {"邯郸", "河北"}, {"邢台", "河北"}, {"保定", "河北"}, {"张家口", "河北"},
+            {"承德", "河北"}, {"沧州", "河北"}, {"廊坊", "河北"}, {"衡水", "河北"},
+            {"昌黎", "河北"}, {"滦平", "河北"}, {"平泉", "河北"}, {"兴隆", "河北"},
+            {"任丘", "河北"}, {"清河", "河北"},
+            {"太原", "山西"}, {"大同", "山西"}, {"阳泉", "山西"}, {"长治", "山西"},
+            {"晋城", "山西"}, {"朔州", "山西"}, {"晋中", "山西"}, {"运城", "山西"},
+            {"忻州", "山西"}, {"临汾", "山西"}, {"吕梁", "山西"},
+            {"平遥", "山西"}, {"太谷", "山西"}, {"定襄", "山西"}, {"汾西", "山西"},
+            {"古县", "山西"}, {"长子", "山西"}, {"万荣", "山西"}, {"怀仁", "山西"},
+            {"大宁", "山西"},
+            {"沈阳", "辽宁"}, {"大连", "辽宁"}, {"鞍山", "辽宁"}, {"抚顺", "辽宁"},
+            {"本溪", "辽宁"}, {"丹东", "辽宁"}, {"锦州", "辽宁"}, {"营口", "辽宁"},
+            {"阜新", "辽宁"}, {"辽阳", "辽宁"}, {"盘锦", "辽宁"}, {"铁岭", "辽宁"},
+            {"朝阳", "辽宁"}, {"葫芦岛", "辽宁"},
+            {"宜兴", "江苏"}, {"新沂", "江苏"}, {"涟水", "江苏"}, {"泗洪", "江苏"},
+            {"句容", "江苏"}, {"靖江", "江苏"}, {"常熟", "江苏"}, {"武进", "江苏"},
+            {"金湖", "江苏"},
+            {"滨海", "天津"}, {"津南", "天津"},
+            {"双辽", "吉林"}, {"长影", "吉林"},
+            {"中国蓝", "浙江"},
+            {"香港", "香港"},
+    };
+
+    private String findProvinceByChannelName(String channelName) {
+        if (channelName == null) return null;
+        for (String[] pair : CITY_PROVINCE) {
+            if (channelName.contains(pair[0])) return pair[1];
+        }
+        return null;
+    }
+
+    private String findProvinceByGroup(String groupName) {
+        if (groupName == null) return null;
+        for (String[] pair : CITY_PROVINCE) {
+            if (groupName.contains(pair[0])) return pair[1];
+        }
+        return null;
+    }
+
+    private static final String[] PROVINCE_KEYWORDS = {
+            "北京", "天津", "河北", "山西", "内蒙古", "辽宁", "吉林", "黑龙江",
+            "上海", "江苏", "浙江", "安徽", "福建", "江西", "山东", "河南",
+            "湖北", "湖南", "广东", "广西", "海南", "重庆", "四川", "贵州",
+            "云南", "西藏", "陕西", "甘肃", "青海", "宁夏", "新疆",
+            "香港", "澳门", "台湾", "青岛", "南京"
+    };
+
+    private static final String[] HOT_FRONT = {
+            "央视频", "卫视", "电影频道", "直播中国",
+            "央视景观", "体育", "纪录频道", "iPanda", "少儿"
+    };
+
+    private static final String[] HOT_BACK = {
+            "春晚频道", "B站", "斗鱼", "虎牙"
+    };
+
+    private boolean isProvinceGroup(String g) {
+        if (g == null) return false;
+        for (String k : PROVINCE_KEYWORDS) {
+            if (g.contains(k)) return true;
+        }
+        return false;
+    }
+
+    private int frontIndex(String g) {
+        for (int i = 0; i < HOT_FRONT.length; i++) {
+            if (HOT_FRONT[i].equals(g)) return i;
+        }
+        return -1;
+    }
+
+    private int backIndex(String g) {
+        for (int i = 0; i < HOT_BACK.length; i++) {
+            if (HOT_BACK[i].equals(g)) return i;
+        }
+        return -1;
+    }
+
+    private void sortMenuGroups(List<String> groups) {
+        java.util.Collections.sort(groups, (a, b) -> {
+            int fa = frontIndex(a);
+            int fb = frontIndex(b);
+            if (fa >= 0 && fb >= 0) return Integer.compare(fa, fb);
+            if (fa >= 0) return -1;
+            if (fb >= 0) return 1;
+
+            boolean pa = isProvinceGroup(a);
+            boolean pb = isProvinceGroup(b);
+            if (pa && !pb) return -1;
+            if (!pa && pb) return 1;
+
+            int ba = backIndex(a);
+            int bb = backIndex(b);
+            if (ba >= 0 && bb >= 0) return Integer.compare(ba, bb);
+            if (ba >= 0) return 1;
+            if (bb >= 0) return -1;
+
+            return a.compareTo(b);
+        });
+    }
+
     private void parseM3u8(String content) {
         List<Channel> parsed = new ArrayList<>();
         String currentGroup = "默认";
         String currentName = null;
         String[] lines = content.split("\\r?\\n");
+
+        Map<String, Channel> merged = new LinkedHashMap<>();
+        Map<String, Map<String, Integer>> groupVotes = new LinkedHashMap<>();
+        Map<String, Set<String>> seenUrls = new LinkedHashMap<>();
+
+        int rawEntryCount = 0;
         for (String line : lines) {
             String trimmed = line.trim();
             if (trimmed.isEmpty() || trimmed.startsWith("#")) {
@@ -614,15 +881,85 @@ public class MainActivity extends Activity {
                 continue;
             }
             if (trimmed.startsWith("http") && currentName != null) {
-                parsed.add(new Channel(currentName, trimmed, currentGroup));
+                rawEntryCount++;
+                String normalized = normalizeChannelName(currentName);
+                if (normalized.length() == 0) normalized = currentName;
+                String displayName = canonicalDisplayName(normalized);
+                String key = displayName;
+
+                String effectiveGroup = rewriteGroup(currentGroup, displayName);
+                if (effectiveGroup == null) {
+                    currentName = null;
+                    continue;
+                }
+
+                if (!merged.containsKey(key)) {
+                    merged.put(key, new Channel(displayName, effectiveGroup));
+                    groupVotes.put(key, new LinkedHashMap<String, Integer>());
+                    seenUrls.put(key, new LinkedHashSet<String>());
+                }
+                Channel ch = merged.get(key);
+
+                if (!groupVotes.get(key).containsKey(effectiveGroup)) {
+                    groupVotes.get(key).put(effectiveGroup, 0);
+                }
+                groupVotes.get(key).put(effectiveGroup, groupVotes.get(key).get(effectiveGroup) + 1);
+
+                if (!seenUrls.get(key).contains(trimmed)) {
+                    seenUrls.get(key).add(trimmed);
+                    StreamLine sl = new StreamLine(trimmed, effectiveGroup);
+                    ch.lines.add(sl);
+                }
                 currentName = null;
             }
         }
-        Log.i(TAG, "m3u_parsed count=" + parsed.size());
+
+        for (Map.Entry<String, Map<String, Integer>> e : groupVotes.entrySet()) {
+            String key = e.getKey();
+            Map<String, Integer> votes = e.getValue();
+            String bestGroup = "";
+            int bestCount = -1;
+            for (Map.Entry<String, Integer> ge : votes.entrySet()) {
+                if (ge.getValue() > bestCount) {
+                    bestCount = ge.getValue();
+                    bestGroup = ge.getKey();
+                }
+            }
+            Channel ch = merged.get(key);
+            if (ch != null && bestGroup.length() > 0) {
+                if (!bestGroup.equals(ch.group)) {
+                    merged.remove(key);
+                    Channel moved = new Channel(ch.name, bestGroup);
+                    moved.lines.addAll(ch.lines);
+                    merged.put(key, moved);
+                }
+            }
+        }
+
+        parsed.addAll(merged.values());
+
+        int multiLineCount = 0;
+        int totalLines = 0;
+        int maxLines = 0;
+        for (Channel c : parsed) {
+            totalLines += c.lines.size();
+            if (c.lines.size() > 1) multiLineCount++;
+            if (c.lines.size() > maxLines) maxLines = c.lines.size();
+        }
+        Log.i(TAG, "m3u_raw_entries=" + rawEntryCount + " unique_channels=" + parsed.size()
+                + " merged_multi_line=" + multiLineCount + " total_lines=" + totalLines
+                + " max_lines_per_channel=" + maxLines);
+
+        parsed.sort((a, b) -> {
+            if (a.lines.size() != b.lines.size()) return b.lines.size() - a.lines.size();
+            return a.name.compareTo(b.name);
+        });
+
         if (parsed.isEmpty()) {
             showOverlay("M3U 解析无频道", false);
             return;
         }
+
         channels.clear();
         channels.addAll(parsed);
         channelsLoaded = true;
@@ -637,7 +974,8 @@ public class MainActivity extends Activity {
             }
             groupChannelMap.get(g).add(ch);
         }
-        Log.i(TAG, "m3u_groups count=" + menuGroups.size());
+        sortMenuGroups(menuGroups);
+        Log.i(TAG, "m3u_groups count=" + menuGroups.size() + " order=" + menuGroups);
 
         String savedPid = preferences.getString(PREF_CHANNEL_PID, "");
         currentIndex = findChannelIndexByPid(savedPid);
@@ -665,8 +1003,25 @@ public class MainActivity extends Activity {
         preferences.edit().putString(PREF_CHANNEL_PID, String.valueOf(currentIndex)).apply();
         showPlaybackOverlay();
         updateStatus();
-        Log.i(TAG, "exo_play index=" + currentIndex + " name=" + ch.name + " url=" + ch.streamUrl);
-        String url = ch.streamUrl;
+
+        if (ch.lines.isEmpty()) {
+            Log.w(TAG, "channel_no_lines name=" + ch.name);
+            return;
+        }
+
+        sortLinesByLatency(ch);
+
+        int lineIdx = Math.min(ch.currentLineIndex, ch.lines.size() - 1);
+        if (lineIdx < 0) lineIdx = 0;
+        StreamLine line = ch.lines.get(lineIdx);
+        String url = line.url;
+
+        String latStr = !line.checked ? "?" : (!line.good ? "TIMEOUT" : line.latencyMs + "ms");
+        Log.i(TAG, "exo_play index=" + currentIndex + " name=" + ch.name
+                + " line=" + (lineIdx + 1) + "/" + ch.lines.size()
+                + " lat=" + latStr
+                + " url=" + url);
+
         if (url == null || url.isEmpty()) return;
         androidx.media3.datasource.DefaultHttpDataSource.Factory httpFactory =
                 new androidx.media3.datasource.DefaultHttpDataSource.Factory()
@@ -695,29 +1050,29 @@ public class MainActivity extends Activity {
     }
 
     private void detectBadChannels() {
-        final int total = channels.size();
-        Log.i(TAG, "channel_detect start total=" + total);
+        Log.i(TAG, "channel_detect start async");
+
+        final List<StreamLine> allLines = new ArrayList<>();
+        for (Channel ch : channels) {
+            for (StreamLine sl : ch.lines) {
+                allLines.add(sl);
+            }
+        }
+        if (allLines.isEmpty()) return;
+
         new Thread(new Runnable() {
             @Override
             public void run() {
-                java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newFixedThreadPool(12);
-                java.util.concurrent.CountDownLatch latch = new java.util.concurrent.CountDownLatch(total);
-                int checkedCount = 0;
-                for (int i = 0; i < total; i++) {
-                    final int idx = i;
-                    final Channel ch = channels.get(idx);
-                    if (ch.checked) { latch.countDown(); continue; }
-                    if (i == currentIndex) {
-                        ch.checked = true;
-                        latch.countDown();
-                        continue;
-                    }
-                    checkedCount++;
+                java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newFixedThreadPool(16);
+                java.util.concurrent.CountDownLatch latch = new java.util.concurrent.CountDownLatch(allLines.size());
+
+                for (final StreamLine sl : allLines) {
                     pool.submit(new Runnable() {
                         @Override
                         public void run() {
                             try {
-                                HttpURLConnection conn = (HttpURLConnection) new URL(ch.streamUrl).openConnection();
+                                long start = System.currentTimeMillis();
+                                HttpURLConnection conn = (HttpURLConnection) new URL(sl.url).openConnection();
                                 conn.setConnectTimeout(5000);
                                 conn.setReadTimeout(5000);
                                 conn.setRequestMethod("HEAD");
@@ -726,7 +1081,7 @@ public class MainActivity extends Activity {
                                 int code = conn.getResponseCode();
                                 conn.disconnect();
                                 if (code == 405) {
-                                    HttpURLConnection conn2 = (HttpURLConnection) new URL(ch.streamUrl).openConnection();
+                                    HttpURLConnection conn2 = (HttpURLConnection) new URL(sl.url).openConnection();
                                     conn2.setConnectTimeout(5000);
                                     conn2.setReadTimeout(5000);
                                     conn2.setRequestMethod("GET");
@@ -736,17 +1091,22 @@ public class MainActivity extends Activity {
                                     code = conn2.getResponseCode();
                                     conn2.disconnect();
                                 }
+                                long latency = System.currentTimeMillis() - start;
                                 if (code >= 400) {
-                                    ch.hidden = true;
-                                    badUrls.add(ch.streamUrl);
-                                    Log.w(TAG, "channel_bad_http idx=" + idx + " code=" + code + " name=" + ch.name);
+                                    sl.good = false;
+                                    sl.latencyMs = 99999;
+                                    Log.w(TAG, "line_bad_http code=" + code + " url=" + sl.url);
+                                } else {
+                                    sl.good = true;
+                                    sl.latencyMs = latency;
+                                    Log.d(TAG, "line_ok lat=" + latency + "ms url=" + sl.url.substring(0, Math.min(60, sl.url.length())));
                                 }
                             } catch (Exception e) {
-                                ch.hidden = true;
-                                badUrls.add(ch.streamUrl);
-                                Log.w(TAG, "channel_bad_net idx=" + idx + " err=" + e.getClass().getSimpleName() + " name=" + ch.name);
+                                sl.good = false;
+                                sl.latencyMs = 99999;
+                                Log.w(TAG, "line_bad_net err=" + e.getClass().getSimpleName() + " url=" + sl.url.substring(0, Math.min(60, sl.url.length())));
                             } finally {
-                                ch.checked = true;
+                                sl.checked = true;
                                 latch.countDown();
                             }
                         }
@@ -754,33 +1114,52 @@ public class MainActivity extends Activity {
                 }
                 try { latch.await(90, java.util.concurrent.TimeUnit.SECONDS); } catch (InterruptedException ignored) {}
                 pool.shutdown();
-                Log.i(TAG, "channel_detect done checked=" + checkedCount + " bad=" + badUrls.size());
+
+                final int[] badLineCount = {0};
+                for (Channel ch : channels) {
+                    boolean hasGood = false;
+                    for (StreamLine sl : ch.lines) {
+                        if (sl.good) { hasGood = true; break; }
+                    }
+                    if (!hasGood) {
+                        badLineCount[0]++;
+                    }
+                }
+                Log.i(TAG, "channel_detect done bad_channels=" + badLineCount[0] + " total_channels=" + channels.size());
                 handler.post(new Runnable() {
                     @Override
                     public void run() {
-                        rebuildVisibleLists();
+                        channelItemAdapter.notifyDataSetChanged();
+                        groupAdapter.notifyDataSetChanged();
+                        updateStatus();
                     }
                 });
             }
-        }, "ChannelDetect").start();
+        }, "ChannelDetectAsync").start();
     }
 
     private synchronized void rebuildVisibleLists() {
         List<Channel> visible = new ArrayList<>();
         int hiddenCount = 0;
         for (Channel ch : channels) {
-            if (ch.hidden) hiddenCount++;
-            else visible.add(ch);
+            boolean allBad = !ch.lines.isEmpty();
+            for (StreamLine sl : ch.lines) {
+                if (!sl.checked || sl.good) { allBad = false; break; }
+            }
+            if (allBad) {
+                hiddenCount++;
+            } else {
+                visible.add(ch);
+            }
         }
         if (hiddenCount == 0) {
             groupAdapter.notifyDataSetChanged();
             channelItemAdapter.notifyDataSetChanged();
             return;
         }
-        int wasCurrentUrlIndex = -1;
-        String curUrl = "";
+        String curName = "";
         if (currentIndex >= 0 && currentIndex < channels.size()) {
-            curUrl = channels.get(currentIndex).streamUrl;
+            curName = channels.get(currentIndex).name;
         }
         channels.clear();
         channels.addAll(visible);
@@ -794,11 +1173,12 @@ public class MainActivity extends Activity {
             }
             groupChannelMap.get(g).add(ch);
         }
+        sortMenuGroups(menuGroups);
+        int wasCurrentIndex = 0;
         for (int i = 0; i < channels.size(); i++) {
-            if (channels.get(i).streamUrl.equals(curUrl)) { wasCurrentUrlIndex = i; break; }
+            if (channels.get(i).name.equals(curName)) { wasCurrentIndex = i; break; }
         }
-        if (wasCurrentUrlIndex < 0) wasCurrentUrlIndex = 0;
-        currentIndex = wasCurrentUrlIndex;
+        currentIndex = wasCurrentIndex;
         if (!channels.isEmpty()) {
             String curGroup = (channels.get(currentIndex).group != null && channels.get(currentIndex).group.length() > 0)
                     ? channels.get(currentIndex).group : "默认";
@@ -906,48 +1286,7 @@ public class MainActivity extends Activity {
     }
 
     private void onChannelsLoaded(String json) {
-        if (channelsLoaded) {
-            return;
-        }
-        try {
-            JSONArray array = new JSONArray(json);
-            channels.clear();
-            for (int i = 0; i < array.length(); i++) {
-                JSONObject object = array.getJSONObject(i);
-                String rawName = object.optString("name");
-                String displayName = CHANNEL_NAME_MAP.get(rawName) != null
-                        ? CHANNEL_NAME_MAP.get(rawName) : rawName;
-                channels.add(new Channel(
-                        displayName,
-                        object.optString("pid"),
-                        object.optString("streamId"),
-                        object.optString("type"),
-                        object.optBoolean("is4K", false)));
-            }
-            if (channels.isEmpty()) {
-                Log.w(TAG, "channels_loaded count=0");
-                showOverlay("暂无可用频道", false);
-                return;
-            }
-            channelsLoaded = true;
-            Log.i(TAG, "channels_loaded count=" + channels.size());
-            String savedPid = preferences.getString(PREF_CHANNEL_PID, "");
-            currentIndex = findChannelIndexByPid(savedPid);
-            if (currentIndex < 0) {
-                currentIndex = 0;
-            }
-            Channel ch0 = channels.get(currentIndex);
-            String g0 = (ch0.group != null && ch0.group.length() > 0) ? ch0.group : "默认";
-            selectedGroupIndex = menuGroups.indexOf(g0);
-            if (selectedGroupIndex < 0) selectedGroupIndex = 0;
-            selectedChannelInGroup = findChannelIndexInGroup(selectedGroupIndex, ch0);
-            groupAdapter.notifyDataSetChanged();
-            channelItemAdapter.notifyDataSetChanged();
-            updateMenuHeader();
-            requestCurrentStream("initial");
-        } catch (Exception e) {
-            showOverlay("Failed to parse channel list: " + e.getMessage(), false);
-        }
+        Log.d(TAG, "onChannelsLoaded_ignored len=" + (json == null ? 0 : json.length()));
     }
 
     private int findChannelIndexByPid(String pid) {
@@ -958,11 +1297,6 @@ public class MainActivity extends Activity {
             int idx = Integer.parseInt(pid.trim());
             if (idx >= 0 && idx < channels.size()) return idx;
         } catch (NumberFormatException ignored) {}
-        for (int i = 0; i < channels.size(); i++) {
-            if (pid.equals(channels.get(i).pid)) {
-                return i;
-            }
-        }
         return -1;
     }
 
@@ -972,57 +1306,11 @@ public class MainActivity extends Activity {
 
     private void requestCurrentStream(String reason) {
         if (channels.isEmpty()) return;
-        Channel channel = channels.get(currentIndex);
-        if (channel.streamUrl != null && channel.streamUrl.length() > 0) {
-            playCurrentWithExo();
-            return;
-        }
-        if (bridgeWebView == null) return;
-        preferences.edit().putString(PREF_CHANNEL_PID, channel.pid).apply();
-        showPlaybackOverlay();
-        updateStatus();
-        String requestId = String.valueOf(++requestCounter);
-        activeRequestId = requestId;
-        Log.i(TAG, "stream_request id=" + requestId + " index=" + currentIndex
-                + " name=" + channel.name + " pid=" + channel.pid
-                + " streamId=" + channel.streamId + " quality=" + preferredQuality);
-        String js = "window.YspTvBridge && window.YspTvBridge.playChannel("
-                + quoteJs(requestId) + ","
-                + quoteJs(channel.pid) + ","
-                + quoteJs(channel.streamId) + ","
-                + quoteJs(preferredQuality) + ","
-                + quoteJs(reason) + ");";
-        bridgeWebView.evaluateJavascript(js, null);
+        playCurrentWithExo();
     }
 
     private void onPlaybackResult(String requestId, String json) {
-        if (!activeRequestId.equals(requestId)) {
-            return;
-        }
-        try {
-            JSONObject object = new JSONObject(json);
-            if (!object.optBoolean("ok", false)) {
-                Log.w(TAG, "web_playback id=" + requestId + " ok=false error=" + object.optString("error"));
-                showOverlay("Playback failed: " + object.optString("error"), false);
-                return;
-            }
-            String actualQuality = object.optString("quality", preferredQuality);
-            if (qualityIndex(actualQuality) >= 0) {
-                preferredQuality = actualQuality;
-                preferences.edit().putString(PREF_QUALITY, preferredQuality).apply();
-            }
-            if (loadingOverlay != null && loadingOverlay.getVisibility() == View.VISIBLE) {
-                loadingOverlay.setVisibility(View.GONE);
-                if (bridgeWebView != null) {
-                    bridgeWebView.setVisibility(View.VISIBLE);
-                }
-                Log.i(TAG, "loading_hidden_webview_shown");
-            }
-            updateStatus();
-            Log.i(TAG, "web_playback id=" + requestId + " ok=true quality=" + preferredQuality);
-        } catch (Exception e) {
-            showOverlay("Failed to parse playback result: " + e.getMessage(), false);
-        }
+        Log.d(TAG, "onPlaybackResult_ignored id=" + requestId);
     }
 
     private String quoteJs(String value) {
@@ -1040,7 +1328,12 @@ public class MainActivity extends Activity {
         int next = currentIndex;
         for (int step = 0; step < channels.size(); step++) {
             next = (next + delta + channels.size()) % channels.size();
-            if (!channels.get(next).hidden) break;
+            Channel nc = channels.get(next);
+            boolean allBad = !nc.lines.isEmpty();
+            for (StreamLine sl : nc.lines) {
+                if (!sl.checked || sl.good) { allBad = false; break; }
+            }
+            if (!allBad) break;
         }
         currentIndex = next;
         Log.i(TAG, "channel_change index=" + currentIndex + " name=" + channels.get(currentIndex).name);
@@ -1054,64 +1347,146 @@ public class MainActivity extends Activity {
         requestCurrentStream("channel");
     }
 
-    private void changeQuality(int delta) {
-        int index = qualityIndex(preferredQuality);
-        if (index < 0) {
-            index = qualityIndex("fhd");
+    private void switchLine(int delta) {
+        if (channels.isEmpty()) return;
+        Channel ch = channels.get(currentIndex);
+        if (ch.lines.size() <= 1) {
+            showOverlay("当前频道只有1条线路", true);
+            return;
         }
-        index = (index + delta + QUALITY_ORDER.length) % QUALITY_ORDER.length;
-        preferredQuality = QUALITY_ORDER[index];
-        Log.i(TAG, "quality_change quality=" + preferredQuality);
-        preferences.edit().putString(PREF_QUALITY, preferredQuality).apply();
-        requestCurrentStream("quality");
+        sortLinesByLatency(ch);
+        ch.currentLineIndex = (ch.currentLineIndex + delta + ch.lines.size()) % ch.lines.size();
+        StreamLine line = ch.lines.get(ch.currentLineIndex);
+        String prefix = "切换线路: " + (ch.currentLineIndex + 1) + "/" + ch.lines.size() + "  ";
+        showOverlay(buildColoredLatencySpan(prefix, line), true);
+        Log.i(TAG, "switch_line channel=" + ch.name + " line=" + (ch.currentLineIndex + 1) + "/" + ch.lines.size());
+        playCurrentWithExo();
     }
 
-    private int qualityIndex(String quality) {
-        for (int i = 0; i < QUALITY_ORDER.length; i++) {
-            if (QUALITY_ORDER[i].equals(quality)) {
-                return i;
+    private boolean switchToNextLine(boolean fromError) {
+        if (channels.isEmpty()) return false;
+        Channel ch = channels.get(currentIndex);
+        if (ch.lines.size() <= 1) return false;
+
+        int startIdx = ch.currentLineIndex;
+        sortLinesByLatency(ch);
+
+        for (int i = 1; i <= ch.lines.size(); i++) {
+            int candidate = (startIdx + i) % ch.lines.size();
+            StreamLine line = ch.lines.get(candidate);
+            if (!line.checked || line.good) {
+                ch.currentLineIndex = candidate;
+                Log.i(TAG, "auto_switch_line fromError=" + fromError + " newIdx=" + candidate
+                        + " url=" + line.url.substring(0, Math.min(60, line.url.length())));
+                playCurrentWithExo();
+                return true;
             }
         }
-        return -1;
+        return false;
     }
 
-    private String qualityLabel(String quality) {
-        if ("hd".equals(quality)) {
-            return "540P HD";
-        }
-        if ("shd".equals(quality)) {
-            return "720P SHD";
-        }
-        return "1080P Blu-ray";
-    }
-
-    private String qualityOverlayLabel(String quality) {
-        if ("hd".equals(quality)) {
-            return "540P";
-        }
-        if ("shd".equals(quality)) {
-            return "720P";
-        }
-        return "1080P";
+    private void sortLinesByLatency(Channel ch) {
+        if (ch.lines.size() < 2) return;
+        try {
+            java.util.Collections.sort(ch.lines, new java.util.Comparator<StreamLine>() {
+                @Override
+                public int compare(StreamLine a, StreamLine b) {
+                    boolean aBad = a.checked && !a.good;
+                    boolean bBad = b.checked && !b.good;
+                    if (aBad != bBad) return aBad ? 1 : -1;
+                    if (a.latencyMs < 0 && b.latencyMs < 0) return 0;
+                    if (a.latencyMs < 0) return 1;
+                    if (b.latencyMs < 0) return -1;
+                    return Long.compare(a.latencyMs, b.latencyMs);
+                }
+            });
+            int newIdx = 0;
+            for (int i = 0; i < ch.lines.size(); i++) {
+                if (ch.lines.get(i).url.equals(ch.lines.get(ch.currentLineIndex).url)) {
+                    newIdx = i;
+                    break;
+                }
+            }
+            ch.currentLineIndex = newIdx;
+        } catch (Exception ignored) {}
     }
 
     private String playbackModeLabel() {
         return PLAYBACK_MODE_SW.equals(playbackMode) ? "软解" : "硬解";
     }
 
+    private int latencyColor(long ms, boolean good) {
+        if (!good) return Color.parseColor("#B71C1C");
+        if (ms <= 50) return Color.parseColor("#00E676");
+        if (ms <= 120) return Color.parseColor("#4CAF50");
+        if (ms <= 250) return Color.parseColor("#FFEB3B");
+        if (ms <= 500) return Color.parseColor("#FF9800");
+        if (ms <= 1000) return Color.parseColor("#FF5252");
+        return Color.parseColor("#D32F2F");
+    }
+
+    private String latencyText(StreamLine sl) {
+        if (sl == null) return "—";
+        if (!sl.checked) return "检测中...";
+        if (!sl.good) return "超时维护中";
+        return sl.latencyMs + "ms";
+    }
+
+    private CharSequence buildColoredLatencySpan(String prefix, StreamLine sl) {
+        String text = prefix + latencyText(sl);
+        SpannableString ss = new SpannableString(text);
+        if (sl != null && sl.checked) {
+            int start = prefix.length();
+            int color = latencyColor(sl.latencyMs, sl.good);
+            ss.setSpan(new ForegroundColorSpan(color), start, text.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        } else if (sl != null && !sl.checked) {
+            int start = prefix.length();
+            ss.setSpan(new ForegroundColorSpan(0xFF888888), start, text.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        }
+        return ss;
+    }
+
+    private CharSequence buildColoredLineInfo(Channel ch, boolean includeChannelName) {
+        StringBuilder sb = new StringBuilder();
+        if (includeChannelName) {
+            sb.append(ch.name);
+            sb.append("  ");
+        }
+        if (!ch.lines.isEmpty()) {
+            StreamLine sl = ch.lines.get(Math.min(ch.currentLineIndex, ch.lines.size() - 1));
+            sb.append("线路").append(ch.currentLineIndex + 1).append("/").append(ch.lines.size()).append("  ");
+            String prefix = sb.toString();
+            return buildColoredLatencySpan(prefix, sl);
+        }
+        return sb.toString();
+    }
+
     private void updateStatus() {
-        String channelName = channels.isEmpty() ? "" : channels.get(currentIndex).name;
-        statusText.setText(qualityLabel(preferredQuality) + (channelName.length() > 0 ? "  " + channelName : ""));
+        if (channels.isEmpty()) {
+            statusText.setText("");
+            return;
+        }
+        statusText.setText(buildColoredLineInfo(channels.get(currentIndex), true));
     }
 
     private void showPlaybackOverlay() {
         if (channels.isEmpty()) {
             return;
         }
-        String title = channels.get(currentIndex).name + "  " + qualityOverlayLabel(preferredQuality);
-        String text = title + "\n" + PLAYBACK_HELP_TEXT;
+        Channel ch = channels.get(currentIndex);
+        CharSequence title = buildColoredLineInfo(ch, true);
+        String text = title.toString() + "\n" + PLAYBACK_HELP_TEXT;
         SpannableString overlay = new SpannableString(text);
         overlay.setSpan(new RelativeSizeSpan(0.45f), title.length() + 1, text.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        if (title instanceof SpannableString) {
+            SpannableString titleSS = (SpannableString) title;
+            ForegroundColorSpan[] fcs = titleSS.getSpans(0, titleSS.length(), ForegroundColorSpan.class);
+            for (ForegroundColorSpan span : fcs) {
+                int s = titleSS.getSpanStart(span);
+                int e = titleSS.getSpanEnd(span);
+                overlay.setSpan(new ForegroundColorSpan(span.getForegroundColor()), s, e, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            }
+        }
         showOverlay(overlay, true);
     }
 
@@ -1492,7 +1867,7 @@ public class MainActivity extends Activity {
         if (keyCode == KeyEvent.KEYCODE_DPAD_UP) { changeChannel(-1); return true; }
         if (keyCode == KeyEvent.KEYCODE_DPAD_DOWN) { changeChannel(1); return true; }
         if (keyCode == KeyEvent.KEYCODE_DPAD_LEFT) { if (centerModule != null) centerModule.toggle(); return true; }
-        if (keyCode == KeyEvent.KEYCODE_DPAD_RIGHT) { changeQuality(1); return true; }
+        if (keyCode == KeyEvent.KEYCODE_DPAD_RIGHT) { switchLine(1); return true; }
         if (keyCode == KeyEvent.KEYCODE_DPAD_CENTER || keyCode == KeyEvent.KEYCODE_ENTER || keyCode == KeyEvent.KEYCODE_MENU) {
             toggleMenu(); return true;
         }
@@ -1566,7 +1941,7 @@ public class MainActivity extends Activity {
             if (dx < 0) {
                 if (centerModule != null) centerModule.toggle();
             } else {
-                changeQuality(1);
+                switchLine(1);
             }
         } else {
             changeChannel(dy > 0 ? 1 : -1);
@@ -1969,29 +2344,28 @@ public class MainActivity extends Activity {
         }
     }
 
+    private static final class StreamLine {
+        final String url;
+        final String source;
+        volatile boolean good = false;
+        volatile boolean checked = false;
+        volatile long latencyMs = -1;
+
+        StreamLine(String url, String source) {
+            this.url = url;
+            this.source = source;
+        }
+    }
+
     private static final class Channel {
         final String name;
-        final String streamUrl;
         final String group;
-        final String pid;
-        final String streamId;
-        volatile boolean hidden = false;
-        volatile boolean checked = false;
+        final List<StreamLine> lines = new ArrayList<>();
+        int currentLineIndex = 0;
 
-        Channel(String name, String streamUrl, String group) {
+        Channel(String name, String group) {
             this.name = name;
-            this.streamUrl = streamUrl;
             this.group = group;
-            this.pid = "";
-            this.streamId = "";
-        }
-
-        Channel(String name, String pid, String streamId, String type, boolean is4K) {
-            this.name = name;
-            this.streamUrl = "";
-            this.group = "";
-            this.pid = pid;
-            this.streamId = streamId;
         }
     }
 
@@ -2107,9 +2481,19 @@ public class MainActivity extends Activity {
                     0, ViewGroup.LayoutParams.WRAP_CONTENT, 1);
             nameView.setLayoutParams(mlp);
 
+            TextView latencyView = new TextView(MainActivity.this);
+            latencyView.setTextSize(12);
+            latencyView.setTextColor(Color.GRAY);
+            latencyView.setGravity(Gravity.CENTER);
+            latencyView.setSingleLine(true);
+            int latW = dp(70);
+            LinearLayout.LayoutParams llp = new LinearLayout.LayoutParams(latW, ViewGroup.LayoutParams.WRAP_CONTENT);
+            latencyView.setLayoutParams(llp);
+
             container.addView(numView);
             container.addView(nameView);
-            return new VH(container, numView, nameView);
+            container.addView(latencyView);
+            return new VH(container, numView, nameView, latencyView);
         }
 
         @Override
@@ -2123,12 +2507,30 @@ public class MainActivity extends Activity {
             holder.numView.setText(String.format("%03d", position + 1));
             holder.nameView.setText(ch.name);
 
+            if (!ch.lines.isEmpty()) {
+                StreamLine best = ch.lines.get(0);
+                if (!best.checked) {
+                    holder.latencyView.setText("...");
+                    holder.latencyView.setTextColor(0xFF888888);
+                } else if (!best.good) {
+                    holder.latencyView.setText("超时维护中");
+                    holder.latencyView.setTextColor(Color.parseColor("#B71C1C"));
+                } else {
+                    holder.latencyView.setText(best.latencyMs + "ms");
+                    holder.latencyView.setTextColor(latencyColor(best.latencyMs, true));
+                }
+            } else {
+                holder.latencyView.setText("—");
+                holder.latencyView.setTextColor(0xFF555555);
+            }
+
             GradientDrawable bg = (GradientDrawable) holder.container.getBackground();
             if (position == selectedChannelInGroup && !focusOnGroupSide) {
                 bg.setColor(0xFF1D6FFF);
                 bg.setStroke(0, 0);
                 holder.nameView.setTextColor(Color.WHITE);
                 holder.numView.setTextColor(0xFFFFFFFF);
+                holder.latencyView.setTextColor(Color.WHITE);
             } else if (absIdx == currentIndex) {
                 bg.setColor(0x44222222);
                 bg.setStroke(0, 0);
@@ -2158,11 +2560,13 @@ public class MainActivity extends Activity {
             LinearLayout container;
             TextView numView;
             TextView nameView;
-            VH(LinearLayout c, TextView n, TextView na) {
+            TextView latencyView;
+            VH(LinearLayout c, TextView n, TextView na, TextView la) {
                 super(c);
                 container = c;
                 numView = n;
                 nameView = na;
+                latencyView = la;
             }
         }
     }

@@ -701,57 +701,33 @@ $sql = "CREATE TABLE `{$DP}live` (
 
 		var ruyiApiUrl = '/ruyi/ruyi_api.php?';
 
-		function safeNotify(type, title, msg) {
-			try {
-				var jq = window.jQuery || window.$;
-				if (jq && jq.NotificationApp && typeof jq.NotificationApp.send === 'function') {
-					jq.NotificationApp.send(title, msg, 'top-center', 'rgba(0,0,0,0.2)', type);
-				} else {
-					alert(title + ': ' + msg);
-				}
-			} catch(e) {
-				console.log('Notification error:', e);
-			}
-		}
-
 		function loadSourcesList() {
 			$.getJSON(ruyiApiUrl + '&action=list', function(res) {
-				try {
-					var tbody = $('#sourcesTableBody');
-					tbody.empty();
-					var sources = [];
-					if (res && res.data && res.data.sources) {
-						sources = res.data.sources;
-					} else if (res && res.sources) {
-						sources = res.sources;
-					}
-					if (!sources || sources.length === 0) {
-						tbody.html('<tr><td colspan="6" class="text-center text-muted py-3">暂无订阅源，请先添加</td></tr>');
-						return;
-					}
-					var typeLabel = { remote: '<span class="badge badge-info">远程URL</span>', local: '<span class="badge badge-warning">本地文件</span>' };
-					var stateLabel = { enabled: '<span class="badge badge-success">启用</span>', disabled: '<span class="badge badge-secondary">停用</span>' };
-					sources.forEach(function(s) {
-						var urlOrFile = s.type === 'remote' ? s.url : s.file;
-						var shortUrl = urlOrFile && urlOrFile.length > 45 ? urlOrFile.substring(0, 45) + '...' : (urlOrFile || '');
-						var row = '<tr data-id="' + s.id + '">' +
-							'<td><center><code>' + s.id + '</code></center></td>' +
-							'<td><center>' + s.name + '</center></td>' +
-							'<td><center>' + (typeLabel[s.type] || s.type) + '</center></td>' +
-							'<td title="' + urlOrFile + '"><code style="font-size:11px;">' + shortUrl + '</code></td>' +
-							'<td><center>' + (s.state == 1 ? stateLabel.enabled : stateLabel.disabled) + '</center></td>' +
-							'<td><center>' +
-								'<button class="btn btn-xs btn-warning toggleSrc" data-id="' + s.id + '" data-state="' + s.state + '" title="启/停"><i class="mdi mdi-power"></i></button> ' +
-								'<button class="btn btn-xs btn-danger delSrc" data-id="' + s.id + '" data-name="' + s.name + '" title="删除"><i class="mdi mdi-delete"></i></button>' +
-							'</center></td></tr>';
-						tbody.append(row);
-					});
-				} catch(e) {
-					console.log('loadSourcesList render error:', e);
+				var tbody = $('#sourcesTableBody');
+				tbody.empty();
+				if (!res.sources || res.sources.length === 0) {
+					tbody.html('<tr><td colspan="6" class="text-center text-muted py-3">暂无订阅源，请先添加</td></tr>');
+					return;
 				}
-			}).fail(function(xhr) {
-				console.log('loadSourcesList fail:', xhr.status, xhr.responseText);
-				$('#sourcesTableBody').html('<tr><td colspan="6" class="text-center text-danger py-3">加载失败，请刷新页面重试</td></tr>');
+				var typeLabel = { remote: '<span class="badge badge-info">远程URL</span>', local: '<span class="badge badge-warning">本地文件</span>' };
+				var stateLabel = { enabled: '<span class="badge badge-success">启用</span>', disabled: '<span class="badge badge-secondary">停用</span>' };
+				res.sources.forEach(function(s) {
+					var urlOrFile = s.type === 'remote' ? s.url : s.file;
+					var shortUrl = urlOrFile.length > 45 ? urlOrFile.substring(0, 45) + '...' : urlOrFile;
+					var row = '<tr data-id="' + s.id + '">' +
+						'<td><center><code>' + s.id + '</code></center></td>' +
+						'<td><center>' + s.name + '</center></td>' +
+						'<td><center>' + (typeLabel[s.type] || s.type) + '</center></td>' +
+						'<td title="' + urlOrFile + '"><code style="font-size:11px;">' + shortUrl + '</code></td>' +
+						'<td><center>' + (s.state == 1 ? stateLabel.enabled : stateLabel.disabled) + '</center></td>' +
+						'<td><center>' +
+							'<button class="btn btn-xs btn-warning toggleSrc" data-id="' + s.id + '" data-state="' + s.state + '" title="启/停"><i class="mdi mdi-power"></i></button> ' +
+							'<button class="btn btn-xs btn-danger delSrc" data-id="' + s.id + '" data-name="' + s.name + '" title="删除"><i class="mdi mdi-delete"></i></button>' +
+						'</center></td></tr>';
+					tbody.append(row);
+				});
+			}).fail(function() {
+				$('#sourcesTableBody').html('<tr><td colspan="6" class="text-center text-danger py-3">加载失败，检查 RuyiMerger 类是否存在</td></tr>');
 			});
 		}
 
@@ -765,28 +741,18 @@ $sql = "CREATE TABLE `{$DP}live` (
 			if (!name || !url) { alert('请填写名称和URL'); return; }
 			var $btn = $(this);
 			$btn.prop('disabled', true).html('<i class="mdi mdi-loading mdi-spin"></i> 添加中...');
-			$.ajax({
-				cache: false,
-				type: 'POST',
-				url: ruyiApiUrl + '&action=add_source',
-				data: { name: name, url: url, format: fmt, type: 'remote' },
-				dataType: 'json',
-				success: function(res) {
-					$btn.prop('disabled', false).html('<i class="mdi mdi-plus mr-1"></i>添加远程源');
-					console.log('add_source response:', res);
-					if (res && res.code === 200) {
-						$('#src_name').val(''); $('#src_url').val('');
-						loadSourcesList();
-						safeNotify('success', '成功', res.msg || '添加成功');
-					} else {
-						safeNotify('error', '失败', (res && res.msg) || '添加失败');
-					}
-				},
-				error: function(xhr) {
-					$btn.prop('disabled', false).html('<i class="mdi mdi-plus mr-1"></i>添加远程源');
-					console.log('add_source error:', xhr.status, xhr.responseText);
-					safeNotify('error', '请求失败', 'HTTP ' + xhr.status + ': ' + (xhr.responseText || '无响应'));
+			$.post(ruyiApiUrl + '&action=add_source', { name: name, url: url, format: fmt, type: 'remote' }, function(res) {
+				$btn.prop('disabled', false).html('<i class="mdi mdi-plus mr-1"></i>添加远程源');
+				if (res.code === 200) {
+					t.NotificationApp.send('成功', res.msg, 'top-center', 'rgba(0,0,0,0.2)', 'success');
+					$('#src_name').val(''); $('#src_url').val('');
+					loadSourcesList();
+				} else {
+					t.NotificationApp.send('失败', res.msg || '添加失败', 'top-center', 'rgba(0,0,0,0.2)', 'error');
 				}
+			}).fail(function() {
+				$btn.prop('disabled', false).html('<i class="mdi mdi-plus mr-1"></i>添加远程源');
+				t.NotificationApp.send('失败', '请求失败', 'top-center', 'rgba(0,0,0,0.2)', 'error');
 			});
 		});
 
@@ -806,19 +772,17 @@ $sql = "CREATE TABLE `{$DP}live` (
 				dataType: 'json',
 				success: function(res) {
 					$btn.prop('disabled', false).html('<i class="mdi mdi-cloud-upload mr-1"></i>上传并导入');
-					console.log('upload_file response:', res);
-					if (res && res.code === 200) {
+					if (res.code === 200) {
+						t.NotificationApp.send('成功', res.msg, 'top-center', 'rgba(0,0,0,0.2)', 'success');
 						fileInput.value = '';
 						loadSourcesList();
-						safeNotify('success', '成功', res.msg || '上传成功');
 					} else {
-						safeNotify('error', '失败', (res && res.msg) || '上传失败');
+						t.NotificationApp.send('失败', res.msg || '上传失败', 'top-center', 'rgba(0,0,0,0.2)', 'error');
 					}
 				},
-				error: function(xhr) {
+				error: function() {
 					$btn.prop('disabled', false).html('<i class="mdi mdi-cloud-upload mr-1"></i>上传并导入');
-					console.log('upload_file error:', xhr.status, xhr.responseText);
-					safeNotify('error', '请求失败', 'HTTP ' + xhr.status);
+					t.NotificationApp.send('失败', '上传请求失败', 'top-center', 'rgba(0,0,0,0.2)', 'error');
 				}
 			});
 		});
@@ -827,24 +791,12 @@ $sql = "CREATE TABLE `{$DP}live` (
 			var id = $(this).data('id');
 			var name = $(this).data('name');
 			if (!confirm('确定删除订阅源「' + name + '」吗？')) return;
-			$.ajax({
-				cache: false,
-				type: 'POST',
-				url: ruyiApiUrl + '&action=del_source',
-				data: { id: id },
-				dataType: 'json',
-				success: function(res) {
-					console.log('del_source response:', res);
-					if (res && res.code === 200) {
-						loadSourcesList();
-						safeNotify('success', '成功', res.msg || '删除成功');
-					} else {
-						safeNotify('error', '失败', (res && res.msg) || '删除失败');
-					}
-				},
-				error: function(xhr) {
-					console.log('del_source error:', xhr.status);
-					safeNotify('error', '请求失败', 'HTTP ' + xhr.status);
+			$.post(ruyiApiUrl + '&action=del_source', { id: id }, function(res) {
+				if (res.code === 200) {
+					t.NotificationApp.send('成功', res.msg, 'top-center', 'rgba(0,0,0,0.2)', 'success');
+					loadSourcesList();
+				} else {
+					t.NotificationApp.send('失败', res.msg, 'top-center', 'rgba(0,0,0,0.2)', 'error');
 				}
 			});
 		});
@@ -852,23 +804,11 @@ $sql = "CREATE TABLE `{$DP}live` (
 		$(document).on('click', '.toggleSrc', function() {
 			var id = $(this).data('id');
 			var state = $(this).data('state') == 1 ? 0 : 1;
-			$.ajax({
-				cache: false,
-				type: 'POST',
-				url: ruyiApiUrl + '&action=toggle_source',
-				data: { id: id, state: state },
-				dataType: 'json',
-				success: function(res) {
-					console.log('toggle_source response:', res);
-					if (res && res.code === 200) {
-						loadSourcesList();
-					} else {
-						safeNotify('error', '失败', (res && res.msg) || '操作失败');
-					}
-				},
-				error: function(xhr) {
-					console.log('toggle_source error:', xhr.status);
-					safeNotify('error', '请求失败', 'HTTP ' + xhr.status);
+			$.post(ruyiApiUrl + '&action=toggle_source', { id: id, state: state }, function(res) {
+				if (res.code === 200) {
+					loadSourcesList();
+				} else {
+					t.NotificationApp.send('失败', res.msg, 'top-center', 'rgba(0,0,0,0.2)', 'error');
 				}
 			});
 		});
@@ -876,32 +816,21 @@ $sql = "CREATE TABLE `{$DP}live` (
 		$('#syncSourcesBtn').click(function() {
 			var $btn = $(this);
 			$btn.prop('disabled', true).html('<i class="mdi mdi-loading mdi-spin mr-1"></i>正在同步所有线路...');
-			$.ajax({
-				cache: false,
-				type: 'POST',
-				url: ruyiApiUrl + '&action=sync',
-				dataType: 'json',
-				success: function(res) {
-					$btn.prop('disabled', false).html('<i class="mdi mdi-refresh mr-1"></i>一键同步所有线路');
-					console.log('sync response:', res);
-					var box = $('#sourceStatusBox');
-					if (res && res.code === 200) {
-						var dat = res.data || {};
-						var msg = '同步完成！合并 ' + (dat.channels_count || 0) + ' 个频道，' + (dat.sources_count || 0) + ' 条线路。';
-						box.removeClass('alert-danger').addClass('alert alert-success').html('<i class="mdi mdi-check-circle mr-1"></i><b>' + msg + '</b>');
-						loadSourcesList();
-						safeNotify('success', '同步完成', msg);
-					} else {
-						var errMsg = (res && res.msg) || '未知错误';
-						box.removeClass('alert-success').addClass('alert alert-danger').html('<i class="mdi mdi-alert mr-1"></i><b>同步失败：</b>' + errMsg);
-						safeNotify('error', '同步失败', errMsg);
-					}
-				},
-				error: function(xhr) {
-					$btn.prop('disabled', false).html('<i class="mdi mdi-refresh mr-1"></i>一键同步所有线路');
-					console.log('sync error:', xhr.status, xhr.responseText);
-					safeNotify('error', '同步请求失败', 'HTTP ' + xhr.status);
+			$.post(ruyiApiUrl + '&action=sync', function(res) {
+				$btn.prop('disabled', false).html('<i class="mdi mdi-refresh mr-1"></i>一键同步所有线路');
+				var box = $('#sourceStatusBox');
+				box.removeClass('alert alert-success alert-danger');
+				if (res.code === 200) {
+					box.addClass('alert alert-success').html('<i class="mdi mdi-check-circle mr-1"></i><b>同步完成！</b> 合并 ' + (res.channels_count || 0) + ' 个频道，' + (res.sources_count || 0) + ' 条线路。');
+					t.NotificationApp.send('成功', '同步完成：' + (res.channels_count || 0) + ' 个频道', 'top-center', 'rgba(0,0,0,0.2)', 'success');
+					loadSourcesList();
+				} else {
+					box.addClass('alert alert-danger').html('<i class="mdi mdi-alert mr-1"></i><b>同步失败：</b> ' + (res.msg || '未知错误'));
+					t.NotificationApp.send('失败', res.msg || '同步失败', 'top-center', 'rgba(0,0,0,0.2)', 'error');
 				}
+			}).fail(function() {
+				$btn.prop('disabled', false).html('<i class="mdi mdi-refresh mr-1"></i>一键同步所有线路');
+				t.NotificationApp.send('失败', '同步请求失败', 'top-center', 'rgba(0,0,0,0.2)', 'error');
 			});
 		});
 	</script>
