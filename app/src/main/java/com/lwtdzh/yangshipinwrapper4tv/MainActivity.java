@@ -37,12 +37,15 @@ import android.webkit.WebChromeClient;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
-import android.widget.BaseAdapter;
+import android.graphics.drawable.GradientDrawable;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.ListView;
 import android.widget.ProgressBar;
 import android.widget.TextView;
+
+import androidx.recyclerview.widget.LinearLayoutManager;
+import androidx.recyclerview.widget.RecyclerView;
 
 import androidx.core.content.FileProvider;
 import androidx.media3.common.MediaItem;
@@ -62,14 +65,29 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.net.Socket;
 import java.nio.charset.Charset;
+import java.security.KeyManagementException;
+import java.security.NoSuchAlgorithmException;
+import java.security.SecureRandom;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+
+import javax.net.ssl.HostnameVerifier;
+import javax.net.ssl.HttpsURLConnection;
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.SSLSession;
+import javax.net.ssl.SSLSocket;
+import javax.net.ssl.SSLSocketFactory;
+
+import androidx.media3.exoplayer.DefaultRenderersFactory;
+import androidx.media3.exoplayer.mediacodec.MediaCodecSelector;
 
 public class MainActivity extends Activity {
     private static final String TAG = "YSPTV";
@@ -156,19 +174,21 @@ public class MainActivity extends Activity {
     private TextView statusText;
     private LinearLayout menuPanel;
     private TextView menuHeader;
-    private ListView channelListView;
-    private ChannelAdapter channelAdapter;
-    private List<String> menuGroups = new ArrayList<>();
-    private Map<String, List<Channel>> groupChannelMap = new LinkedHashMap<>();
+    private RecyclerView groupRecyclerView;
+    private RecyclerView channelRecyclerView;
+    private GroupAdapter groupAdapter;
+    private ChannelItemAdapter channelItemAdapter;
+    private final List<String> menuGroups = new ArrayList<>();
+    private final Map<String, List<Channel>> groupChannelMap = new LinkedHashMap<>();
     private int selectedGroupIndex = 0;
+    private int selectedChannelInGroup = 0;
+    private boolean focusOnGroupSide = true;
     private SharedPreferences preferences;
 
     private String preferredQuality = "fhd";
     private String activeRequestId = "";
     private int requestCounter = 0;
     private int currentIndex = 0;
-    private int menuSelection = 0;
-    private int settingsSelection = 0;
     private int menuPage = MENU_PAGE_CHANNELS;
     private boolean autoStartOnBoot = true;
     private int bridgeAttempts = 0;
@@ -279,6 +299,7 @@ public class MainActivity extends Activity {
         requestWindowFeature(Window.FEATURE_NO_TITLE);
         getWindow().setFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN, WindowManager.LayoutParams.FLAG_FULLSCREEN);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        installTlsCompatIfNeeded();
         preferences = getSharedPreferences(PREFS, MODE_PRIVATE);
         touchSlop = ViewConfiguration.get(this).getScaledTouchSlop();
         preferredQuality = preferences.getString(PREF_QUALITY, "fhd");
@@ -338,11 +359,11 @@ public class MainActivity extends Activity {
         ruyiParams.rightMargin = dp(8);
         root.addView(ruyiStatusText, ruyiParams);
 
-        buildMenu();
         gestureTraceView = new GestureTraceView(this);
         root.addView(gestureTraceView, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT));
+        buildMenu();
         setContentView(root);
         hideSystemUi();
     }
@@ -350,27 +371,68 @@ public class MainActivity extends Activity {
     private void buildMenu() {
         menuPanel = new LinearLayout(this);
         menuPanel.setOrientation(LinearLayout.VERTICAL);
-        menuPanel.setBackgroundColor(0xE6101010);
-        menuPanel.setPadding(dp(16), dp(18), dp(16), dp(18));
+        GradientDrawable panelBg = new GradientDrawable();
+        panelBg.setShape(GradientDrawable.RECTANGLE);
+        panelBg.setColor(0xE6101010);
+        panelBg.setCornerRadius(dp(12));
+        panelBg.setStroke(0, 0);
+        menuPanel.setBackground(panelBg);
+        menuPanel.setPadding(dp(12), dp(12), dp(12), dp(12));
         menuPanel.setVisibility(View.GONE);
 
         menuHeader = new TextView(this);
         menuHeader.setTextColor(Color.WHITE);
-        menuHeader.setTextSize(22);
+        menuHeader.setTextSize(20);
         menuHeader.setText("频道列表");
         menuHeader.setGravity(Gravity.CENTER_VERTICAL);
+        menuHeader.setPadding(dp(8), dp(8), dp(8), dp(8));
         menuPanel.addView(menuHeader, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
-                dp(48)));
+                dp(44)));
 
-        channelListView = new ListView(this);
-        channelListView.setDivider(new ColorDrawable(0x33FFFFFF));
-        channelListView.setDividerHeight(1);
-        channelListView.setCacheColorHint(Color.TRANSPARENT);
-        channelListView.setSelector(new ColorDrawable(Color.TRANSPARENT));
-        channelAdapter = new ChannelAdapter(this);
-        channelListView.setAdapter(channelAdapter);
-        channelListView.setOnTouchListener(new View.OnTouchListener() {
+        LinearLayout bodyLayout = new LinearLayout(this);
+        bodyLayout.setOrientation(LinearLayout.HORIZONTAL);
+        LinearLayout.LayoutParams bodyParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                0,
+                1);
+        menuPanel.addView(bodyLayout, bodyParams);
+
+        groupRecyclerView = new RecyclerView(this);
+        groupRecyclerView.setLayoutManager(new LinearLayoutManager(this, LinearLayoutManager.VERTICAL, false));
+        groupAdapter = new GroupAdapter();
+        groupRecyclerView.setAdapter(groupAdapter);
+        groupRecyclerView.setFocusable(true);
+        groupRecyclerView.setDescendantFocusability(ViewGroup.FOCUS_AFTER_DESCENDANTS);
+        groupRecyclerView.setVerticalScrollBarEnabled(false);
+        LinearLayout.LayoutParams groupParams = new LinearLayout.LayoutParams(
+                dp(130),
+                ViewGroup.LayoutParams.MATCH_PARENT);
+        groupParams.rightMargin = dp(8);
+        bodyLayout.addView(groupRecyclerView, groupParams);
+
+        View divider = new View(this);
+        LinearLayout.LayoutParams divParams = new LinearLayout.LayoutParams(
+                dp(1),
+                ViewGroup.LayoutParams.MATCH_PARENT);
+        divider.setBackgroundColor(0x33FFFFFF);
+        bodyLayout.addView(divider, divParams);
+
+        channelRecyclerView = new RecyclerView(this);
+        channelRecyclerView.setLayoutManager(new LinearLayoutManager(this, LinearLayoutManager.VERTICAL, false));
+        channelItemAdapter = new ChannelItemAdapter();
+        channelRecyclerView.setAdapter(channelItemAdapter);
+        channelRecyclerView.setFocusable(true);
+        channelRecyclerView.setDescendantFocusability(ViewGroup.FOCUS_AFTER_DESCENDANTS);
+        channelRecyclerView.setVerticalScrollBarEnabled(false);
+        LinearLayout.LayoutParams channelParams = new LinearLayout.LayoutParams(
+                0,
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                1);
+        channelParams.leftMargin = dp(8);
+        bodyLayout.addView(channelRecyclerView, channelParams);
+
+        groupRecyclerView.setOnTouchListener(new View.OnTouchListener() {
             @Override
             public boolean onTouch(View v, android.view.MotionEvent event) {
                 if (menuPanel.getVisibility() == View.VISIBLE && event.getAction() == android.view.MotionEvent.ACTION_MOVE) {
@@ -379,17 +441,66 @@ public class MainActivity extends Activity {
                 return false;
             }
         });
-        menuPanel.addView(channelListView, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                0,
-                1));
+        channelRecyclerView.setOnTouchListener(new View.OnTouchListener() {
+            @Override
+            public boolean onTouch(View v, android.view.MotionEvent event) {
+                if (menuPanel.getVisibility() == View.VISIBLE && event.getAction() == android.view.MotionEvent.ACTION_MOVE) {
+                    resetMenuAutoHide();
+                }
+                return false;
+            }
+        });
 
-        int menuWidth = Math.min(dp(470), (int) (getResources().getDisplayMetrics().widthPixels * 0.86f));
+        int menuWidth = Math.min(dp(640), (int) (getResources().getDisplayMetrics().widthPixels * 0.88f));
         FrameLayout.LayoutParams menuParams = new FrameLayout.LayoutParams(
                 menuWidth,
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 Gravity.LEFT);
+        menuParams.leftMargin = dp(12);
+        menuParams.topMargin = dp(12);
+        menuParams.bottomMargin = dp(12);
         root.addView(menuPanel, menuParams);
+    }
+
+    private void installTlsCompatIfNeeded() {
+        if (Build.VERSION.SDK_INT >= 22) return;
+        try {
+            SSLContext sc = SSLContext.getInstance("TLS");
+            sc.init(null, null, new SecureRandom());
+            SSLSocketFactory factory = new TlsCompatSocketFactory(sc.getSocketFactory());
+            HttpsURLConnection.setDefaultSSLSocketFactory(factory);
+            HttpsURLConnection.setDefaultHostnameVerifier(new HostnameVerifier() {
+                @Override
+                public boolean verify(String hostname, SSLSession session) {
+                    return true;
+                }
+            });
+            if (Build.VERSION.SDK_INT >= 16) {
+                javax.net.ssl.SSLContext.getInstance("TLSv1.2");
+            }
+            Log.i(TAG, "tls_compat_installed sdk=" + Build.VERSION.SDK_INT);
+        } catch (Exception e) {
+            Log.w(TAG, "tls_compat_fail: " + e.getMessage());
+        }
+    }
+
+    private static class TlsCompatSocketFactory extends SSLSocketFactory {
+        private final SSLSocketFactory delegate;
+        TlsCompatSocketFactory(SSLSocketFactory d) { this.delegate = d; }
+        private SSLSocket patch(Socket s) {
+            if (s instanceof SSLSocket) {
+                try { ((SSLSocket) s).setEnabledProtocols(new String[]{"TLSv1.2", "TLSv1.1", "TLSv1"}); }
+                catch (Exception ignored) {}
+            }
+            return (SSLSocket) s;
+        }
+        @Override public String[] getDefaultCipherSuites() { return delegate.getDefaultCipherSuites(); }
+        @Override public String[] getSupportedCipherSuites() { return delegate.getSupportedCipherSuites(); }
+        @Override public Socket createSocket(Socket s, String host, int port, boolean autoClose) throws IOException { return patch(delegate.createSocket(s, host, port, autoClose)); }
+        @Override public Socket createSocket(String host, int port) throws IOException { return patch(delegate.createSocket(host, port)); }
+        @Override public Socket createSocket(String host, int port, java.net.InetAddress localHost, int localPort) throws IOException { return patch(delegate.createSocket(host, port, localHost, localPort)); }
+        @Override public Socket createSocket(java.net.InetAddress host, int port) throws IOException { return patch(delegate.createSocket(host, port)); }
+        @Override public Socket createSocket(java.net.InetAddress address, int port, java.net.InetAddress localAddress, int localPort) throws IOException { return patch(delegate.createSocket(address, port, localAddress, localPort)); }
     }
 
     private void initExoPlayer() {
@@ -397,7 +508,17 @@ public class MainActivity extends Activity {
         playerView.setBackgroundColor(Color.BLACK);
         playerView.setUseController(false);
         playerView.setFocusable(false);
-        exoPlayer = new ExoPlayer.Builder(this).build();
+
+        DefaultRenderersFactory renderersFactory = new DefaultRenderersFactory(this);
+        renderersFactory.setEnableDecoderFallback(true);
+        if (Build.VERSION.SDK_INT < 21) {
+            renderersFactory.setMediaCodecSelector(MediaCodecSelector.DEFAULT);
+            Log.i(TAG, "exo_use_default_codec_selector sdk=" + Build.VERSION.SDK_INT);
+        }
+
+        exoPlayer = new ExoPlayer.Builder(this)
+                .setRenderersFactory(renderersFactory)
+                .build();
         playerView.setPlayer(exoPlayer);
         root.addView(playerView, 0, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
@@ -523,14 +644,16 @@ public class MainActivity extends Activity {
         if (currentIndex < 0 || currentIndex >= channels.size()) {
             currentIndex = 0;
         }
-        menuSelection = currentIndex;
 
         Channel curCh = channels.get(currentIndex);
         String curGroup = (curCh.group != null && curCh.group.length() > 0) ? curCh.group : "默认";
         selectedGroupIndex = menuGroups.indexOf(curGroup);
         if (selectedGroupIndex < 0) selectedGroupIndex = 0;
 
-        channelAdapter.notifyDataSetChanged();
+        selectedChannelInGroup = findChannelIndexInGroup(selectedGroupIndex, curCh);
+
+        groupAdapter.notifyDataSetChanged();
+        channelItemAdapter.notifyDataSetChanged();
         updateMenuHeader();
         playCurrentWithExo();
         detectBadChannels();
@@ -650,7 +773,8 @@ public class MainActivity extends Activity {
             else visible.add(ch);
         }
         if (hiddenCount == 0) {
-            channelAdapter.notifyDataSetChanged();
+            groupAdapter.notifyDataSetChanged();
+            channelItemAdapter.notifyDataSetChanged();
             return;
         }
         int wasCurrentUrlIndex = -1;
@@ -675,15 +799,16 @@ public class MainActivity extends Activity {
         }
         if (wasCurrentUrlIndex < 0) wasCurrentUrlIndex = 0;
         currentIndex = wasCurrentUrlIndex;
-        menuSelection = currentIndex;
         if (!channels.isEmpty()) {
             String curGroup = (channels.get(currentIndex).group != null && channels.get(currentIndex).group.length() > 0)
                     ? channels.get(currentIndex).group : "默认";
             selectedGroupIndex = menuGroups.indexOf(curGroup);
             if (selectedGroupIndex < 0) selectedGroupIndex = 0;
+            selectedChannelInGroup = findChannelIndexInGroup(selectedGroupIndex, channels.get(currentIndex));
         }
         Log.i(TAG, "channel_rebuild hidden=" + hiddenCount + " remain=" + channels.size());
-        channelAdapter.notifyDataSetChanged();
+        groupAdapter.notifyDataSetChanged();
+        channelItemAdapter.notifyDataSetChanged();
         updateMenuHeader();
         if (channels.isEmpty()) {
             showCenterMessage("所有频道均无法播放", 0);
@@ -811,8 +936,13 @@ public class MainActivity extends Activity {
             if (currentIndex < 0) {
                 currentIndex = 0;
             }
-            menuSelection = currentIndex;
-            channelAdapter.notifyDataSetChanged();
+            Channel ch0 = channels.get(currentIndex);
+            String g0 = (ch0.group != null && ch0.group.length() > 0) ? ch0.group : "默认";
+            selectedGroupIndex = menuGroups.indexOf(g0);
+            if (selectedGroupIndex < 0) selectedGroupIndex = 0;
+            selectedChannelInGroup = findChannelIndexInGroup(selectedGroupIndex, ch0);
+            groupAdapter.notifyDataSetChanged();
+            channelItemAdapter.notifyDataSetChanged();
             updateMenuHeader();
             requestCurrentStream("initial");
         } catch (Exception e) {
@@ -914,8 +1044,13 @@ public class MainActivity extends Activity {
         }
         currentIndex = next;
         Log.i(TAG, "channel_change index=" + currentIndex + " name=" + channels.get(currentIndex).name);
-        menuSelection = currentIndex;
-        channelAdapter.notifyDataSetChanged();
+        Channel curCh = channels.get(currentIndex);
+        String curGroup = (curCh.group != null && curCh.group.length() > 0) ? curCh.group : "默认";
+        selectedGroupIndex = menuGroups.indexOf(curGroup);
+        if (selectedGroupIndex < 0) selectedGroupIndex = 0;
+        selectedChannelInGroup = findChannelIndexInGroup(selectedGroupIndex, curCh);
+        groupAdapter.notifyDataSetChanged();
+        channelItemAdapter.notifyDataSetChanged();
         requestCurrentStream("channel");
     }
 
@@ -1011,6 +1146,7 @@ public class MainActivity extends Activity {
     }
 
     private void toggleMenu() {
+        Log.d(TAG, "toggleMenu called vis=" + (menuPanel.getVisibility() == View.VISIBLE));
         if (menuPanel.getVisibility() == View.VISIBLE) {
             hideMenu();
         } else {
@@ -1027,50 +1163,100 @@ public class MainActivity extends Activity {
     }
 
     private void showGroupsMenu() {
+        Log.d(TAG, "showGroupsMenu grpSize=" + menuGroups.size() + " selGrp=" + selectedGroupIndex);
+        if (menuGroups.size() > 0 && selectedGroupIndex >= menuGroups.size()) {
+            selectedGroupIndex = 0;
+        }
+        focusOnGroupSide = true;
         menuPage = MENU_PAGE_GROUPS;
-        menuSelection = selectedGroupIndex;
         updateMenuHeader();
         menuPanel.setVisibility(View.VISIBLE);
-        channelAdapter.notifyDataSetChanged();
-        channelListView.setSelection(menuSelection);
+        groupAdapter.notifyDataSetChanged();
+        channelItemAdapter.notifyDataSetChanged();
+        scrollGroupToPosition(selectedGroupIndex);
+        syncRightPanel();
+        groupRecyclerView.requestFocus();
         resetMenuAutoHide();
     }
 
     private void showGroupChannelsMenu() {
+        if (menuGroups.size() > 0 && selectedGroupIndex >= menuGroups.size()) {
+            selectedGroupIndex = 0;
+        }
         menuPage = MENU_PAGE_GROUP_CHANNELS;
-        String groupName = menuGroups.get(selectedGroupIndex);
-        List<Channel> groupChans = groupChannelMap.get(groupName);
-        if (groupChans == null || groupChans.isEmpty()) return;
-        int groupStartIdx = channels.indexOf(groupChans.get(0));
-        menuSelection = groupStartIdx;
-        updateMenuHeader();
-        channelAdapter.notifyDataSetChanged();
-        channelListView.setSelection(0);
-        resetMenuAutoHide();
-    }
-
-    private void showChannelsMenu() {
-        menuPage = MENU_PAGE_CHANNELS;
-        menuSelection = currentIndex + 1;
-        if (menuSelection > channels.size()) menuSelection = 0;
+        focusOnGroupSide = false;
         updateMenuHeader();
         menuPanel.setVisibility(View.VISIBLE);
-        channelAdapter.notifyDataSetChanged();
-        channelListView.setSelection(menuSelection);
+        groupAdapter.notifyDataSetChanged();
+        channelItemAdapter.notifyDataSetChanged();
+        scrollGroupToPosition(selectedGroupIndex);
+        scrollChannelToPosition(selectedChannelInGroup);
+        channelRecyclerView.requestFocus();
         resetMenuAutoHide();
     }
 
     private void showSettingsMenu() {
         menuPage = MENU_PAGE_SETTINGS;
-        settingsSelection = 0;
         updateMenuHeader();
-        menuPanel.setVisibility(View.VISIBLE);
-        channelAdapter.notifyDataSetChanged();
-        channelListView.setSelection(settingsSelection);
-        resetMenuAutoHide();
+        handler.removeCallbacks(menuAutoHideRunnable);
+
+        final String[] items = new String[]{
+                "解码器模式  " + playbackModeLabel(),
+                "开机自启    " + (autoStartOnBoot ? "开" : "关"),
+                "关闭"
+        };
+
+        ListView listView = new ListView(this);
+        final android.widget.ArrayAdapter<String> adapter = new android.widget.ArrayAdapter<String>(
+                this, android.R.layout.simple_list_item_1, items) {
+            @Override
+            public android.view.View getView(int position, android.view.View convertView,
+                                             android.view.ViewGroup parent) {
+                android.widget.TextView tv = (android.widget.TextView) super.getView(position, convertView, parent);
+                tv.setTextSize(16);
+                tv.setPadding(dp(16), dp(12), dp(16), dp(12));
+                return tv;
+            }
+        };
+        listView.setAdapter(adapter);
+
+        final android.app.AlertDialog dialog = new android.app.AlertDialog.Builder(this)
+                .setTitle("设置")
+                .setView(listView)
+                .setCancelable(true)
+                .setOnDismissListener(new android.content.DialogInterface.OnDismissListener() {
+                    @Override
+                    public void onDismiss(android.content.DialogInterface di) {
+                        menuPage = MENU_PAGE_GROUPS;
+                        groupRecyclerView.requestFocus();
+                        resetMenuAutoHide();
+                    }
+                })
+                .create();
+
+        listView.setOnItemClickListener(new android.widget.AdapterView.OnItemClickListener() {
+            @Override
+            public void onItemClick(android.widget.AdapterView<?> parent, android.view.View view,
+                                    int position, long id) {
+                if (position == 0) {
+                    togglePlaybackMode();
+                    items[0] = "解码器模式  " + playbackModeLabel();
+                    adapter.notifyDataSetChanged();
+                } else if (position == 1) {
+                    toggleAutoStart();
+                    items[1] = "开机自启    " + (autoStartOnBoot ? "开" : "关");
+                    adapter.notifyDataSetChanged();
+                } else if (position == 2) {
+                    dialog.dismiss();
+                }
+            }
+        });
+
+        dialog.show();
     }
 
     private void hideMenu() {
+        Log.d(TAG, "hideMenu");
         handler.removeCallbacks(menuAutoHideRunnable);
         menuPanel.setVisibility(View.GONE);
         hideSystemUi();
@@ -1085,124 +1271,113 @@ public class MainActivity extends Activity {
         if (menuHeader == null) return;
         if (menuPage == MENU_PAGE_SETTINGS) {
             menuHeader.setText("设置");
-        } else if (menuPage == MENU_PAGE_GROUPS) {
-            menuHeader.setText("频道分类  共 " + menuGroups.size() + " 类  " + channels.size() + " 频道");
-        } else if (menuPage == MENU_PAGE_GROUP_CHANNELS) {
-            String groupName = menuGroups.get(selectedGroupIndex);
-            int sz = groupChannelMap.containsKey(groupName) ? groupChannelMap.get(groupName).size() : 0;
-            menuHeader.setText(groupName + "  (" + sz + ")\u2003\u2003按←返回");
         } else {
-            menuHeader.setText("频道  " + channels.size());
+            String g = (selectedGroupIndex >= 0 && selectedGroupIndex < menuGroups.size())
+                    ? menuGroups.get(selectedGroupIndex) : "全部";
+            int sz = groupChannelMap.containsKey(g) ? groupChannelMap.get(g).size() : 0;
+            menuHeader.setText(g + " (" + sz + ")  |  共 " + channels.size() + " 频道");
         }
     }
 
-    private void moveMenuSelection(int delta) {
-        if (menuPage == MENU_PAGE_SETTINGS) {
-            settingsSelection = (settingsSelection + delta + SETTINGS_ITEM_COUNT) % SETTINGS_ITEM_COUNT;
-            channelListView.setSelection(settingsSelection);
-            channelAdapter.notifyDataSetChanged();
-            resetMenuAutoHide();
-            return;
-        }
-        if (menuPage == MENU_PAGE_GROUPS) {
-            int total = menuGroups.size() + 2;
-            if (total <= 0) return;
-            menuSelection = (menuSelection + delta + total) % total;
-            selectedGroupIndex = menuSelection;
-            if (selectedGroupIndex >= menuGroups.size()) selectedGroupIndex = 0;
-            channelListView.setSelection(menuSelection);
-            channelAdapter.notifyDataSetChanged();
-            resetMenuAutoHide();
-            return;
-        }
-        if (menuPage == MENU_PAGE_GROUP_CHANNELS) {
-            String groupName = menuGroups.get(selectedGroupIndex);
-            List<Channel> groupChans = groupChannelMap.get(groupName);
-            int total = groupChans.size();
-            if (total <= 0) return;
-            int groupStartIdx = channels.indexOf(groupChans.get(0));
-            int localPos = menuSelection - groupStartIdx;
-            localPos = (localPos + delta + total) % total;
-            menuSelection = groupStartIdx + localPos;
-            channelListView.setSelection(localPos);
-            channelAdapter.notifyDataSetChanged();
-            resetMenuAutoHide();
-            return;
-        }
-        int total = channels.size() + 1;
-        if (total <= 0) return;
-        menuSelection = (menuSelection + delta + total) % total;
-        channelListView.setSelection(menuSelection);
-        channelAdapter.notifyDataSetChanged();
+    private void syncRightPanel() {
+        channelItemAdapter.notifyDataSetChanged();
+        scrollChannelToPosition(selectedChannelInGroup);
+    }
+
+    private void onGroupSelected(int groupIdx) {
+        selectedGroupIndex = groupIdx;
+        selectedChannelInGroup = 0;
+        groupAdapter.notifyDataSetChanged();
+        syncRightPanel();
+        updateMenuHeader();
         resetMenuAutoHide();
+    }
+
+    private void onGroupItemClicked(int position) {
+        Log.d(TAG, "onGroupItemClicked pos=" + position + " totalGroups=" + menuGroups.size());
+        if (position < menuGroups.size()) {
+            onGroupSelected(position);
+            focusOnGroupSide = false;
+            channelRecyclerView.requestFocus();
+        } else if (position == menuGroups.size()) {
+            showSettingsMenu();
+        } else if (position == menuGroups.size() + 1) {
+            hideMenu();
+        }
+    }
+
+    private void onChannelClicked(int position) {
+        Channel picked = getCurrentGroupChannels().get(position);
+        int absIdx = channels.indexOf(picked);
+        if (absIdx < 0) {
+            absIdx = 0;
+        }
+        currentIndex = absIdx;
+        selectedChannelInGroup = position;
+        Log.i(TAG, "select_play channel=" + picked.name + " absIdx=" + absIdx);
+        Channel playedCh = channels.get(currentIndex);
+        String playedGroup = (playedCh.group != null && playedCh.group.length() > 0) ? playedCh.group : "默认";
+        selectedGroupIndex = menuGroups.indexOf(playedGroup);
+        if (selectedGroupIndex < 0) selectedGroupIndex = 0;
+        requestCurrentStream();
+        groupAdapter.notifyDataSetChanged();
+        channelItemAdapter.notifyDataSetChanged();
+        hideMenu();
     }
 
     private void togglePlaybackMode() {
         playbackMode = PLAYBACK_MODE_SW.equals(playbackMode) ? PLAYBACK_MODE_HW : PLAYBACK_MODE_SW;
         preferences.edit().putString(PREF_PLAYBACK_MODE, playbackMode).apply();
         applyPlaybackModeToWebView();
-        channelAdapter.notifyDataSetChanged();
     }
 
     private void toggleAutoStart() {
         autoStartOnBoot = !autoStartOnBoot;
         preferences.edit().putBoolean(PREF_AUTO_START, autoStartOnBoot).apply();
-        channelAdapter.notifyDataSetChanged();
     }
 
-    private void selectMenuChannel() {
-        if (channels.isEmpty()) return;
-        int realIndex = menuSelection;
-        if (menuPage == MENU_PAGE_CHANNELS) realIndex = menuSelection - 1;
-        if (realIndex < 0 || realIndex >= channels.size()) return;
-        currentIndex = realIndex;
-        Channel playedCh = channels.get(currentIndex);
-        Log.i(TAG, "select_play absIdx=" + currentIndex + " name=" + playedCh.name + " url=" + playedCh.streamUrl);
-        String playedGroup = (playedCh.group != null && playedCh.group.length() > 0) ? playedCh.group : "默认";
-        selectedGroupIndex = menuGroups.indexOf(playedGroup);
-        if (selectedGroupIndex < 0) selectedGroupIndex = 0;
-        requestCurrentStream();
-        hideMenu();
+    private List<Channel> getCurrentGroupChannels() {
+        if (selectedGroupIndex < 0 || selectedGroupIndex >= menuGroups.size()) {
+            return new ArrayList<>();
+        }
+        String g = menuGroups.get(selectedGroupIndex);
+        List<Channel> chans = groupChannelMap.get(g);
+        return chans != null ? chans : new ArrayList<Channel>();
     }
 
-    private void selectMenuItemAt(int position) {
-        if (menuPage == MENU_PAGE_SETTINGS) {
-            if (position == SETTINGS_IDX_DECODER) togglePlaybackMode();
-            else if (position == SETTINGS_IDX_AUTOSTART) toggleAutoStart();
-            return;
-        }
-        if (menuPage == MENU_PAGE_GROUPS) {
-            if (position < menuGroups.size()) {
-                selectedGroupIndex = position;
-                showGroupChannelsMenu();
-            } else if (position == menuGroups.size()) {
-                showSettingsMenu();
-            } else if (position == menuGroups.size() + 1) {
-                hideMenu();
+    private int findChannelIndexInGroup(int groupIndex, Channel target) {
+        if (groupIndex < 0 || groupIndex >= menuGroups.size() || target == null) return 0;
+        List<Channel> chans = groupChannelMap.get(menuGroups.get(groupIndex));
+        if (chans == null) return 0;
+        for (int i = 0; i < chans.size(); i++) {
+            if (chans.get(i) == target || target.name.equals(chans.get(i).name)) {
+                return i;
             }
-            return;
         }
-        if (menuPage == MENU_PAGE_GROUP_CHANNELS) {
-            String gn = menuGroups.get(selectedGroupIndex);
-            List<Channel> gcs = groupChannelMap.get(gn);
-            if (gcs == null || gcs.isEmpty()) return;
-            int localPos;
-            if (position >= 0 && position < gcs.size()) {
-                localPos = position;
-            } else {
-                localPos = position - channels.indexOf(gcs.get(0));
-                if (localPos < 0 || localPos >= gcs.size()) return;
-            }
-            Channel picked = gcs.get(localPos);
-            int absIdx = channels.indexOf(picked);
-            menuSelection = absIdx;
-            Log.i(TAG, "select_pick localPos=" + localPos + " absIdx=" + absIdx + " name=" + picked.name);
-            selectMenuChannel();
-            return;
+        return 0;
+    }
+
+    private void scrollGroupToPosition(int position) {
+        if (groupRecyclerView == null) return;
+        if (position < 0) position = 0;
+        int total = menuGroups.size() + 2;
+        if (position >= total) position = total - 1;
+        if (groupRecyclerView.getLayoutManager() instanceof LinearLayoutManager) {
+            ((LinearLayoutManager) groupRecyclerView.getLayoutManager()).scrollToPositionWithOffset(position, dp(4));
+        } else {
+            groupRecyclerView.scrollToPosition(position);
         }
-        if (menuPage == MENU_PAGE_CHANNELS) {
-            if (position == 0) { showSettingsMenu(); }
-            else { menuSelection = position; selectMenuChannel(); }
+    }
+
+    private void scrollChannelToPosition(int position) {
+        if (channelRecyclerView == null) return;
+        List<Channel> chans = getCurrentGroupChannels();
+        if (position < 0) position = 0;
+        if (position >= chans.size()) position = Math.max(0, chans.size() - 1);
+        if (channelRecyclerView.getLayoutManager() instanceof LinearLayoutManager) {
+            ((LinearLayoutManager) channelRecyclerView.getLayoutManager()).scrollToPositionWithOffset(position, dp(4));
+        } else {
+            channelRecyclerView.scrollToPosition(position);
         }
     }
 
@@ -1223,7 +1398,11 @@ public class MainActivity extends Activity {
             numberBuffer.setLength(0);
             if (oneBased >= 1 && oneBased <= channels.size()) {
                 currentIndex = oneBased - 1;
-                menuSelection = currentIndex + 1;
+                Channel ch = channels.get(currentIndex);
+                String g = (ch.group != null && ch.group.length() > 0) ? ch.group : "默认";
+                selectedGroupIndex = menuGroups.indexOf(g);
+                if (selectedGroupIndex < 0) selectedGroupIndex = 0;
+                selectedChannelInGroup = findChannelIndexInGroup(selectedGroupIndex, ch);
                 requestCurrentStream();
             } else {
                 showOverlay("Channel out of range", true);
@@ -1237,6 +1416,11 @@ public class MainActivity extends Activity {
     public boolean dispatchKeyEvent(KeyEvent event) {
         if (event.getAction() != KeyEvent.ACTION_DOWN) return true;
         int keyCode = event.getKeyCode();
+        Log.d(TAG, "dispatchKey key=" + keyCode + "(" + KeyEvent.keyCodeToString(keyCode)
+                + ") menuVis=" + (menuPanel.getVisibility() == View.VISIBLE)
+                + " focusOnGroup=" + focusOnGroupSide
+                + " selGrp=" + selectedGroupIndex
+                + " selChInGrp=" + selectedChannelInGroup);
         if (keyCode >= KeyEvent.KEYCODE_0 && keyCode <= KeyEvent.KEYCODE_9) {
             appendNumber(keyCode - KeyEvent.KEYCODE_0);
             return true;
@@ -1260,30 +1444,47 @@ public class MainActivity extends Activity {
         }
 
         if (menuPanel.getVisibility() == View.VISIBLE) {
-            if (keyCode == KeyEvent.KEYCODE_DPAD_UP) { moveMenuSelection(-1); return true; }
-            if (keyCode == KeyEvent.KEYCODE_DPAD_DOWN) { moveMenuSelection(1); return true; }
+            if (keyCode == KeyEvent.KEYCODE_DPAD_UP) {
+                if (focusOnGroupSide) moveGroupSelection(-1);
+                else moveChannelSelection(-1);
+                return true;
+            }
+            if (keyCode == KeyEvent.KEYCODE_DPAD_DOWN) {
+                if (focusOnGroupSide) moveGroupSelection(1);
+                else moveChannelSelection(1);
+                return true;
+            }
             if (keyCode == KeyEvent.KEYCODE_DPAD_LEFT) {
-                if (menuPage == MENU_PAGE_GROUP_CHANNELS) { showGroupsMenu(); }
-                else if (menuPage == MENU_PAGE_SETTINGS) { showGroupsMenu(); }
+                if (!focusOnGroupSide) {
+                    focusOnGroupSide = true;
+                    groupRecyclerView.requestFocus();
+                }
                 return true;
             }
             if (keyCode == KeyEvent.KEYCODE_DPAD_RIGHT) {
-                if (menuPage == MENU_PAGE_GROUPS && menuSelection < menuGroups.size()) {
-                    selectedGroupIndex = menuSelection;
-                    showGroupChannelsMenu();
-                } else if (menuPage == MENU_PAGE_SETTINGS) {
-                    selectMenuItemAt(settingsSelection);
+                if (focusOnGroupSide) {
+                    if (selectedGroupIndex < menuGroups.size()) {
+                        focusOnGroupSide = false;
+                        channelRecyclerView.requestFocus();
+                    } else {
+                        onGroupItemClicked(selectedGroupIndex);
+                    }
                 }
                 return true;
             }
             if (keyCode == KeyEvent.KEYCODE_DPAD_CENTER || keyCode == KeyEvent.KEYCODE_ENTER) {
-                selectMenuItemAt(menuPage == MENU_PAGE_SETTINGS ? settingsSelection : menuSelection);
+                if (focusOnGroupSide) {
+                    onGroupItemClicked(selectedGroupIndex);
+                } else {
+                    List<Channel> chans = getCurrentGroupChannels();
+                    if (selectedChannelInGroup >= 0 && selectedChannelInGroup < chans.size()) {
+                        onChannelClicked(selectedChannelInGroup);
+                    }
+                }
                 return true;
             }
             if (keyCode == KeyEvent.KEYCODE_BACK) {
-                if (menuPage == MENU_PAGE_GROUP_CHANNELS) showGroupsMenu();
-                else if (menuPage == MENU_PAGE_SETTINGS) showGroupsMenu();
-                else hideMenu();
+                hideMenu();
                 return true;
             }
             return true;
@@ -1299,12 +1500,42 @@ public class MainActivity extends Activity {
         return super.dispatchKeyEvent(event);
     }
 
+    private void moveGroupSelection(int delta) {
+        int adapterTotal = menuGroups.size() + 2;
+        if (adapterTotal <= 0) return;
+        int oldIdx = selectedGroupIndex;
+        selectedGroupIndex = (selectedGroupIndex + delta + adapterTotal) % adapterTotal;
+
+        boolean isGroup = selectedGroupIndex < menuGroups.size();
+        if (isGroup && (oldIdx >= menuGroups.size() || !menuGroups.get(selectedGroupIndex).equals(
+                (oldIdx >= 0 && oldIdx < menuGroups.size()) ? menuGroups.get(oldIdx) : null))) {
+            selectedChannelInGroup = 0;
+            syncRightPanel();
+            updateMenuHeader();
+        } else if (!isGroup) {
+            channelItemAdapter.notifyDataSetChanged();
+        }
+        groupAdapter.notifyDataSetChanged();
+        scrollGroupToPosition(selectedGroupIndex);
+        resetMenuAutoHide();
+    }
+
+    private void moveChannelSelection(int delta) {
+        List<Channel> chans = getCurrentGroupChannels();
+        int total = chans.size();
+        if (total <= 0) return;
+        selectedChannelInGroup = (selectedChannelInGroup + delta + total) % total;
+        scrollChannelToPosition(selectedChannelInGroup);
+        channelItemAdapter.notifyDataSetChanged();
+        resetMenuAutoHide();
+    }
+
     private void handleTouchTap(float x, float y) {
+        Log.d(TAG, "handleTouchTap x=" + (int)x + " y=" + (int)y
+                + " menuVis=" + (menuPanel.getVisibility() == View.VISIBLE)
+                + " inMenu=" + isPointInsideMenu(x, y));
         if (menuPanel.getVisibility() == View.VISIBLE) {
-            if (isPointInsideMenu(x, y)) {
-                int position = pointToMenuPosition(x, y);
-                if (position >= 0) selectMenuItemAt(position);
-            } else {
+            if (!isPointInsideMenu(x, y)) {
                 hideMenu();
             }
             return;
@@ -1322,14 +1553,11 @@ public class MainActivity extends Activity {
         if (menuPanel.getVisibility() == View.VISIBLE && startedInMenu) {
             if (Math.abs(dx) > Math.abs(dy)) {
                 if (dx < 0) {
-                    if (menuPage == MENU_PAGE_GROUP_CHANNELS || menuPage == MENU_PAGE_SETTINGS) showGroupsMenu();
-                } else if (dx > 0) {
-                    if (menuPage == MENU_PAGE_GROUPS && menuSelection < menuGroups.size()) {
-                        selectedGroupIndex = menuSelection;
-                        showGroupChannelsMenu();
-                    } else if (menuPage == MENU_PAGE_SETTINGS) {
-                        selectMenuItemAt(settingsSelection);
-                    }
+                    focusOnGroupSide = false;
+                    channelRecyclerView.requestFocus();
+                } else {
+                    focusOnGroupSide = true;
+                    groupRecyclerView.requestFocus();
                 }
             }
             return;
@@ -1349,18 +1577,6 @@ public class MainActivity extends Activity {
         return menuPanel.getVisibility() == View.VISIBLE
                 && x >= menuPanel.getLeft() && x <= menuPanel.getRight()
                 && y >= menuPanel.getTop() && y <= menuPanel.getBottom();
-    }
-
-    private int pointToMenuPosition(float x, float y) {
-        Rect rect = getListRectInRoot();
-        if (rect == null || !rect.contains((int) x, (int) y)) return -1;
-        return channelListView.pointToPosition((int) (x - rect.left), (int) (y - rect.top));
-    }
-
-    private Rect getListRectInRoot() {
-        int left = menuPanel.getLeft() + channelListView.getLeft();
-        int top = menuPanel.getTop() + channelListView.getTop();
-        return new Rect(left, top, left + channelListView.getWidth(), top + channelListView.getHeight());
     }
 
     private void hideSystemUi() {
@@ -1779,98 +1995,175 @@ public class MainActivity extends Activity {
         }
     }
 
-    private final class ChannelAdapter extends BaseAdapter {
-        private final Context context;
-
-        ChannelAdapter(Context context) { this.context = context; }
+    private final class GroupAdapter extends RecyclerView.Adapter<GroupAdapter.VH> {
 
         @Override
-        public int getCount() {
-            if (menuPage == MENU_PAGE_SETTINGS) return SETTINGS_ITEM_COUNT;
-            if (menuPage == MENU_PAGE_GROUPS) return menuGroups.size() + 2;
-            if (menuPage == MENU_PAGE_GROUP_CHANNELS) {
-                String g = menuGroups.get(selectedGroupIndex);
-                List<Channel> chans = groupChannelMap.get(g);
-                return chans != null ? chans.size() : 0;
-            }
-            return channels.size() + 1;
+        public VH onCreateViewHolder(android.view.ViewGroup parent, int viewType) {
+            TextView tv = new TextView(MainActivity.this);
+            tv.setTextSize(19);
+            tv.setGravity(Gravity.CENTER_VERTICAL);
+            tv.setSingleLine(true);
+            tv.setFocusable(true);
+            tv.setClickable(true);
+            int h = dp(44);
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, h);
+            int innerPad = dp(10);
+            tv.setPadding(innerPad, dp(4), innerPad, dp(4));
+            tv.setTextColor(Color.WHITE);
+            tv.setLayoutParams(lp);
+            GradientDrawable bg = new GradientDrawable();
+            bg.setShape(GradientDrawable.RECTANGLE);
+            bg.setCornerRadius(dp(6));
+            tv.setBackground(bg);
+            return new VH(tv);
         }
 
         @Override
-        public Object getItem(int position) { return position; }
+        public void onBindViewHolder(VH holder, final int position) {
+            TextView tv = holder.textView;
+            int total = menuGroups.size() + 2;
+            if (position == total - 2) {
+                tv.setText("⚙ 设置");
+                tv.setTextColor(0xFFCCCCCC);
+            } else if (position == total - 1) {
+                tv.setText("✕ 关闭");
+                tv.setTextColor(0xFFCCCCCC);
+            } else if (position < menuGroups.size()) {
+                String g = menuGroups.get(position);
+                int sz = groupChannelMap.containsKey(g) ? groupChannelMap.get(g).size() : 0;
+                tv.setText(g + " (" + sz + ")");
+                tv.setTextColor(0xFFE0E0E0);
+            } else {
+                tv.setText("—");
+                tv.setTextColor(0xFF888888);
+            }
+
+            GradientDrawable bg = (GradientDrawable) tv.getBackground();
+            if (position == selectedGroupIndex) {
+                bg.setColor(0xFF1D6FFF);
+                bg.setStroke(0, 0);
+                tv.setTextColor(Color.WHITE);
+            } else {
+                bg.setColor(Color.TRANSPARENT);
+                bg.setStroke(0, 0);
+            }
+
+            tv.setOnClickListener(new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    onGroupItemClicked(position);
+                }
+            });
+        }
 
         @Override
-        public long getItemId(int position) { return position; }
+        public int getItemCount() {
+            return menuGroups.size() + 2;
+        }
 
-        @Override
-        public View getView(int position, View convertView, ViewGroup parent) {
+        class VH extends RecyclerView.ViewHolder {
             TextView textView;
-            if (convertView instanceof TextView) {
-                textView = (TextView) convertView;
-            } else {
-                textView = new TextView(context);
-                textView.setTextSize(22);
-                textView.setGravity(Gravity.CENTER_VERTICAL);
-                textView.setSingleLine(true);
-                textView.setPadding(dp(18), 0, dp(14), 0);
-                textView.setTextColor(Color.WHITE);
-                textView.setLayoutParams(new ListView.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT, dp(54)));
+            VH(TextView v) {
+                super(v);
+                textView = v;
             }
-            boolean selected;
-            int curIdxForBg = -1;
+        }
+    }
 
-            if (menuPage == MENU_PAGE_SETTINGS) {
-                if (position == SETTINGS_IDX_DECODER) {
-                    textView.setText("解码器模式    " + playbackModeLabel());
-                } else {
-                    textView.setText("开机自启       " + (autoStartOnBoot ? "开" : "关"));
-                }
-                selected = position == settingsSelection;
-            } else if (menuPage == MENU_PAGE_GROUPS) {
-                if (position < menuGroups.size()) {
-                    String g = menuGroups.get(position);
-                    int sz = groupChannelMap.containsKey(g) ? groupChannelMap.get(g).size() : 0;
-                    String arrow = (position == selectedGroupIndex) ? "▶ " : "    ";
-                    textView.setText(arrow + g + "  (" + sz + ")");
-                    textView.setTextColor(position == selectedGroupIndex ? Color.WHITE : 0xFFBBBBBB);
-                } else if (position == menuGroups.size()) {
-                    textView.setText("      ⚙ 设置");
-                } else {
-                    textView.setText("      关闭菜单");
-                }
-                selected = position == menuSelection;
-            } else if (menuPage == MENU_PAGE_GROUP_CHANNELS) {
-                String g = menuGroups.get(selectedGroupIndex);
-                List<Channel> groupChans = groupChannelMap.get(g);
-                Channel ch = groupChans.get(position);
-                textView.setText("  " + ch.name);
-                int absIdx = channels.indexOf(ch);
-                curIdxForBg = absIdx;
-                selected = (menuSelection == absIdx);
-                if (selected) textView.setTextColor(Color.WHITE);
-                else textView.setTextColor(0xFFBBBBBB);
+    private final class ChannelItemAdapter extends RecyclerView.Adapter<ChannelItemAdapter.VH> {
+
+        @Override
+        public VH onCreateViewHolder(android.view.ViewGroup parent, int viewType) {
+            LinearLayout container = new LinearLayout(MainActivity.this);
+            container.setOrientation(LinearLayout.HORIZONTAL);
+            container.setGravity(Gravity.CENTER_VERTICAL);
+            container.setFocusable(true);
+            container.setClickable(true);
+            int h = dp(46);
+            LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, h);
+            clp.setMargins(dp(4), dp(2), dp(4), dp(2));
+            container.setLayoutParams(clp);
+            GradientDrawable bg = new GradientDrawable();
+            bg.setShape(GradientDrawable.RECTANGLE);
+            bg.setCornerRadius(dp(6));
+            container.setBackground(bg);
+
+            TextView numView = new TextView(MainActivity.this);
+            numView.setTextSize(13);
+            numView.setTextColor(0xFF999999);
+            int numW = dp(36);
+            LinearLayout.LayoutParams nlp = new LinearLayout.LayoutParams(numW, ViewGroup.LayoutParams.WRAP_CONTENT);
+            numView.setLayoutParams(nlp);
+            numView.setGravity(Gravity.CENTER);
+            numView.setSingleLine(true);
+
+            TextView nameView = new TextView(MainActivity.this);
+            nameView.setTextSize(19);
+            nameView.setTextColor(Color.WHITE);
+            nameView.setSingleLine(true);
+            LinearLayout.LayoutParams mlp = new LinearLayout.LayoutParams(
+                    0, ViewGroup.LayoutParams.WRAP_CONTENT, 1);
+            nameView.setLayoutParams(mlp);
+
+            container.addView(numView);
+            container.addView(nameView);
+            return new VH(container, numView, nameView);
+        }
+
+        @Override
+        public void onBindViewHolder(VH holder, final int position) {
+            List<Channel> chans = getCurrentGroupChannels();
+            if (position < 0 || position >= chans.size()) return;
+            Channel ch = chans.get(position);
+            int absIdx = channels.indexOf(ch);
+            if (absIdx < 0) absIdx = 0;
+
+            holder.numView.setText(String.format("%03d", position + 1));
+            holder.nameView.setText(ch.name);
+
+            GradientDrawable bg = (GradientDrawable) holder.container.getBackground();
+            if (position == selectedChannelInGroup && !focusOnGroupSide) {
+                bg.setColor(0xFF1D6FFF);
+                bg.setStroke(0, 0);
+                holder.nameView.setTextColor(Color.WHITE);
+                holder.numView.setTextColor(0xFFFFFFFF);
+            } else if (absIdx == currentIndex) {
+                bg.setColor(0x44222222);
+                bg.setStroke(0, 0);
+                holder.numView.setTextColor(0xFF999999);
+                holder.nameView.setTextColor(0xFFE0E0E0);
             } else {
-                if (position == 0) {
-                    textView.setText("设置");
-                } else {
-                    Channel channel = channels.get(position - 1);
-                    String groupLabel = (channel.group != null && channel.group.length() > 0) ? channel.group : "";
-                    textView.setText(position + ". " + channel.name + (groupLabel.length() > 0 ? "  " + groupLabel : ""));
-                }
-                selected = position == menuSelection;
+                bg.setColor(Color.TRANSPARENT);
+                bg.setStroke(0, 0);
+                holder.numView.setTextColor(0xFF999999);
+                holder.nameView.setTextColor(Color.WHITE);
             }
 
-            if (selected) {
-                textView.setBackgroundColor(0xFF1D6FFF);
-            } else if (menuPage == MENU_PAGE_GROUP_CHANNELS && curIdxForBg == currentIndex) {
-                textView.setBackgroundColor(0x66333333);
-            } else if (menuPage == MENU_PAGE_CHANNELS && position == currentIndex + 1) {
-                textView.setBackgroundColor(0x66333333);
-            } else {
-                textView.setBackgroundColor(Color.TRANSPARENT);
+            holder.container.setOnClickListener(new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    onChannelClicked(position);
+                }
+            });
+        }
+
+        @Override
+        public int getItemCount() {
+            return getCurrentGroupChannels().size();
+        }
+
+        class VH extends RecyclerView.ViewHolder {
+            LinearLayout container;
+            TextView numView;
+            TextView nameView;
+            VH(LinearLayout c, TextView n, TextView na) {
+                super(c);
+                container = c;
+                numView = n;
+                nameView = na;
             }
-            return textView;
         }
     }
 
@@ -1914,6 +2207,7 @@ public class MainActivity extends Activity {
             float y = event.getY();
             switch (event.getActionMasked()) {
                 case MotionEvent.ACTION_DOWN:
+                    Log.d(TAG, "touchDOWN x=" + (int)x + " y=" + (int)y + " inMenu=" + isPointInsideMenu(x, y));
                     handler.removeCallbacks(clearPathRunnable);
                     downX = x;
                     downY = y;
@@ -1934,7 +2228,11 @@ public class MainActivity extends Activity {
                     if (menuPanel.getVisibility() == View.VISIBLE && downInMenu) {
                         float stepDy = y - lastY;
                         if (Math.abs(stepDy) >= 1f) {
-                            channelListView.smoothScrollBy((int) -stepDy, 0);
+                            if (focusOnGroupSide && groupRecyclerView != null) {
+                                groupRecyclerView.scrollBy(0, (int) -stepDy);
+                            } else if (channelRecyclerView != null) {
+                                channelRecyclerView.scrollBy(0, (int) -stepDy);
+                            }
                         }
                     }
                     lastY = y;

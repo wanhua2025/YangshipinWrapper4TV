@@ -743,18 +743,28 @@ $sql = "CREATE TABLE `{$DP}live` (
 			if (!name || !url) { alert('请填写名称和URL'); return; }
 			var $btn = $(this);
 			$btn.prop('disabled', true).html('<i class="mdi mdi-loading mdi-spin"></i> 添加中...');
-			$.post(ruyiApiUrl + '&action=add_source', { name: name, url: url, format: fmt, type: 'remote' }, function(res) {
-				$btn.prop('disabled', false).html('<i class="mdi mdi-plus mr-1"></i>添加远程源');
-				if (res.code === 200) {
-					t.NotificationApp.send('成功', res.msg, 'top-center', 'rgba(0,0,0,0.2)', 'success');
-					$('#src_name').val(''); $('#src_url').val('');
-					loadSourcesList();
-				} else {
-					t.NotificationApp.send('失败', res.msg || '添加失败', 'top-center', 'rgba(0,0,0,0.2)', 'error');
+			$.ajax({
+				cache: false,
+				type: 'POST',
+				url: ruyiApiUrl + '&action=add_source',
+				data: { name: name, url: url, format: fmt, type: 'remote' },
+				dataType: 'json',
+				success: function(res) {
+					$btn.prop('disabled', false).html('<i class="mdi mdi-plus mr-1"></i>添加远程源');
+					if (res.code === 200) {
+						alert('添加成功: ' + res.msg);
+						t.NotificationApp.send('成功', res.msg, 'top-center', 'rgba(0,0,0,0.2)', 'success');
+						$('#src_name').val(''); $('#src_url').val('');
+						loadSourcesList();
+					} else {
+						t.NotificationApp.send('失败', res.msg || '添加失败', 'top-center', 'rgba(0,0,0,0.2)', 'error');
+					}
+				},
+				error: function(xhr) {
+					$btn.prop('disabled', false).html('<i class="mdi mdi-plus mr-1"></i>添加远程源');
+					alert('请求失败: ' + (xhr.responseText || xhr.statusText));
+					t.NotificationApp.send('失败', '请求失败', 'top-center', 'rgba(0,0,0,0.2)', 'error');
 				}
-			}).fail(function() {
-				$btn.prop('disabled', false).html('<i class="mdi mdi-plus mr-1"></i>添加远程源');
-				t.NotificationApp.send('失败', '请求失败', 'top-center', 'rgba(0,0,0,0.2)', 'error');
 			});
 		});
 
@@ -793,12 +803,19 @@ $sql = "CREATE TABLE `{$DP}live` (
 			var id = $(this).data('id');
 			var name = $(this).data('name');
 			if (!confirm('确定删除订阅源「' + name + '」吗？')) return;
-			$.post(ruyiApiUrl + '&action=del_source', { id: id }, function(res) {
-				if (res.code === 200) {
-					t.NotificationApp.send('成功', res.msg, 'top-center', 'rgba(0,0,0,0.2)', 'success');
-					loadSourcesList();
-				} else {
-					t.NotificationApp.send('失败', res.msg, 'top-center', 'rgba(0,0,0,0.2)', 'error');
+			$.ajax({
+				cache: false,
+				type: 'POST',
+				url: ruyiApiUrl + '&action=del_source',
+				data: { id: id },
+				dataType: 'json',
+				success: function(res) {
+					if (res.code === 200) {
+						t.NotificationApp.send('成功', res.msg, 'top-center', 'rgba(0,0,0,0.2)', 'success');
+						loadSourcesList();
+					} else {
+						t.NotificationApp.send('失败', res.msg, 'top-center', 'rgba(0,0,0,0.2)', 'error');
+					}
 				}
 			});
 		});
@@ -806,11 +823,18 @@ $sql = "CREATE TABLE `{$DP}live` (
 		$(document).on('click', '.toggleSrc', function() {
 			var id = $(this).data('id');
 			var state = $(this).data('state') == 1 ? 0 : 1;
-			$.post(ruyiApiUrl + '&action=toggle_source', { id: id, state: state }, function(res) {
-				if (res.code === 200) {
-					loadSourcesList();
-				} else {
-					t.NotificationApp.send('失败', res.msg, 'top-center', 'rgba(0,0,0,0.2)', 'error');
+			$.ajax({
+				cache: false,
+				type: 'POST',
+				url: ruyiApiUrl + '&action=toggle_source',
+				data: { id: id, state: state },
+				dataType: 'json',
+				success: function(res) {
+					if (res.code === 200) {
+						loadSourcesList();
+					} else {
+						t.NotificationApp.send('失败', res.msg, 'top-center', 'rgba(0,0,0,0.2)', 'error');
+					}
 				}
 			});
 		});
@@ -818,22 +842,30 @@ $sql = "CREATE TABLE `{$DP}live` (
 		$('#syncSourcesBtn').click(function() {
 			var $btn = $(this);
 			$btn.prop('disabled', true).html('<i class="mdi mdi-loading mdi-spin mr-1"></i>正在同步所有线路...');
-			$.post(ruyiApiUrl + '&action=sync', function(res) {
-				$btn.prop('disabled', false).html('<i class="mdi mdi-refresh mr-1"></i>一键同步所有线路');
-				var box = $('#sourceStatusBox');
-				box.removeClass('alert alert-success alert-danger');
-				if (res.code === 200) {
-					var dat = res.data || {};
-					box.addClass('alert alert-success').html('<i class="mdi mdi-check-circle mr-1"></i><b>同步完成！</b> 合并 ' + (dat.channels_count || 0) + ' 个频道，' + (dat.sources_count || 0) + ' 条线路。');
-					t.NotificationApp.send('成功', '同步完成：' + (dat.channels_count || 0) + ' 个频道', 'top-center', 'rgba(0,0,0,0.2)', 'success');
-					loadSourcesList();
-				} else {
-					box.addClass('alert alert-danger').html('<i class="mdi mdi-alert mr-1"></i><b>同步失败：</b> ' + (res.msg || '未知错误'));
-					t.NotificationApp.send('失败', res.msg || '同步失败', 'top-center', 'rgba(0,0,0,0.2)', 'error');
+			$.ajax({
+				cache: false,
+				type: 'POST',
+				url: ruyiApiUrl + '&action=sync',
+				dataType: 'json',
+				success: function(res) {
+					$btn.prop('disabled', false).html('<i class="mdi mdi-refresh mr-1"></i>一键同步所有线路');
+					var box = $('#sourceStatusBox');
+					box.removeClass('alert alert-success alert-danger');
+					if (res.code === 200) {
+						var dat = res.data || {};
+						box.addClass('alert alert-success').html('<i class="mdi mdi-check-circle mr-1"></i><b>同步完成！</b> 合并 ' + (dat.channels_count || 0) + ' 个频道，' + (dat.sources_count || 0) + ' 条线路。');
+						t.NotificationApp.send('成功', '同步完成：' + (dat.channels_count || 0) + ' 个频道', 'top-center', 'rgba(0,0,0,0.2)', 'success');
+						loadSourcesList();
+					} else {
+						box.addClass('alert alert-danger').html('<i class="mdi mdi-alert mr-1"></i><b>同步失败：</b> ' + (res.msg || '未知错误'));
+						t.NotificationApp.send('失败', res.msg || '同步失败', 'top-center', 'rgba(0,0,0,0.2)', 'error');
+					}
+				},
+				error: function(xhr) {
+					$btn.prop('disabled', false).html('<i class="mdi mdi-refresh mr-1"></i>一键同步所有线路');
+					alert('同步请求失败: ' + (xhr.responseText || xhr.statusText));
+					t.NotificationApp.send('失败', '同步请求失败', 'top-center', 'rgba(0,0,0,0.2)', 'error');
 				}
-			}).fail(function() {
-				$btn.prop('disabled', false).html('<i class="mdi mdi-refresh mr-1"></i>一键同步所有线路');
-				t.NotificationApp.send('失败', '同步请求失败', 'top-center', 'rgba(0,0,0,0.2)', 'error');
 			});
 		});
 	</script>

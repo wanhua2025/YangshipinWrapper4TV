@@ -1,0 +1,2262 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>播放器</title>
+    <base href="/player/">
+
+    <!-- Import map for P2P engine dependencies -->
+    <script type="importmap">
+    {
+        "imports": {
+            "core": "./js/core.es.min.js"
+        }
+    }
+    </script>
+
+    <script>
+    (function(){
+        var noop = function(){};
+        if (window.console) {
+            console.log = noop;
+            console.warn = noop;
+            console.info = noop;
+            console.group = noop;
+            console.groupEnd = noop;
+        }
+    })();
+    </script>
+
+    <link rel="stylesheet" href="./css/DPlayer.min.css">
+    <link rel="stylesheet" href="./css/plyr.css">
+    <link rel="stylesheet" href="./js/peertube/peertube-player.css">
+
+    <style type="text/css">
+        body,html{width:100%;height:100%;background:#000;padding:0;margin:0;overflow-x:hidden;overflow-y:hidden}
+        *{margin:0;border:0;padding:0;text-decoration:none}
+        #playerWrap{position:relative;width:100%;height:100%;background:#000}
+        #playerWrap:fullscreen{width:100vw;height:100vh;background:#000}
+        #playerWrap:-webkit-full-screen{width:100vw;height:100vh;background:#000}
+        #stats{position:fixed;top:5px;left:10px;font-size:12px;color:#fdfdfd;z-index:2147483647;text-shadow:1px 1px 1px #000, 1px 1px 1px #000;transition:opacity 0.4s ease,transform 0.4s ease;pointer-events:auto}
+        #stats.engine-hidden{opacity:0;transform:translateY(-8px);pointer-events:none}
+        .player-container{position:absolute;top:0;left:0;width:100%;height:100%;display:none}
+        .player-container.active{display:block}
+        #dplayer, #hls-container, #plyr-container, #peertube-container{width:100%;height:100%;position:absolute;top:0;left:0;background:#000}
+        #dplayer video, #hls-container video, #plyr-container video, #peertube-container video{width:100%;height:100%;background:#000;object-fit:contain !important}
+        #peertube-container{width:100%;height:100%;position:absolute;top:0;left:0}
+        #peertube-container .video-js{width:100%!important;height:100%!important;padding-top:0!important;background:#000}
+        #peertube-container .video-js .vjs-tech{object-fit:contain !important;width:100%!important;height:100%!important;top:0;left:0}
+        /* DPlayer 修复：确保控制栏始终在最上层 */
+        #dplayer{z-index:2}
+        #dplayer .dplayer-video-wrap{display:flex;align-items:center;justify-content:center;z-index:1}
+        #dplayer .dplayer-video-wrap video{object-fit:contain !important;max-width:100%;max-height:100%;position:static !important;z-index:auto !important}
+        #dplayer .dplayer-controller{z-index:10 !important;opacity:1 !important;visibility:visible !important}
+        #dplayer.dplayer-full .dplayer-controller{z-index:10 !important}
+        /* Plyr 容器自适应 */
+        #plyr-container .plyr{width:100%;height:100%}
+        #plyr-container .plyr video{object-fit:contain !important}
+        #plyr-container .plyr__video-wrapper{width:100%;height:100%;background:#000}
+        .engine-switcher{position:absolute;top:12px;right:12px;z-index:999999;display:flex;align-items:center;gap:6px;background:rgba(0,0,0,0.6);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);border-radius:10px;padding:6px 10px;border:1px solid rgba(255,255,255,0.12);box-shadow:0 4px 16px rgba(0,0,0,0.3);transition:opacity 0.4s ease,transform 0.4s ease,visibility 0.4s}
+        .engine-switcher.engine-hidden{opacity:0;transform:translateY(-10px);pointer-events:none;visibility:hidden}
+        .quality-item.recommended-hint{color:#27ae60}
+        .quality-item.fail-hint{color:#e74c3c;text-decoration:line-through}
+        .engine-switcher .switcher-label{font-size:11px;color:rgba(255,255,255,0.6);margin-right:4px;white-space:nowrap;user-select:none}
+        .engine-switcher .engine-btn{background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.12);color:rgba(255,255,255,0.8);padding:4px 10px;border-radius:6px;font-size:11px;cursor:pointer;transition:all 0.2s;white-space:nowrap;line-height:1.4;user-select:none;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+        .engine-switcher .engine-btn:hover{background:rgba(255,255,255,0.18);color:#fff;border-color:rgba(255,255,255,0.25)}
+        .engine-switcher .engine-btn.active{background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);border-color:transparent;color:#fff;font-weight:600;box-shadow:0 2px 8px rgba(102,126,234,0.4)}
+        .engine-switcher .p2p-toggle{display:flex;align-items:center;gap:5px;margin-left:4px;padding-left:8px;border-left:1px solid rgba(255,255,255,0.15);cursor:pointer}
+        .engine-switcher .p2p-toggle .toggle-track{position:relative;width:32px;height:18px;background:rgba(255,255,255,0.15);border-radius:9px;cursor:pointer;transition:background 0.25s}
+        .engine-switcher .p2p-toggle .toggle-thumb{position:absolute;top:2px;left:2px;width:14px;height:14px;background:#fff;border-radius:50%;transition:transform 0.25s;box-shadow:0 1px 3px rgba(0,0,0,0.3)}
+        .engine-switcher .p2p-toggle.active .toggle-track{background:linear-gradient(135deg,#667eea 0%,#764ba2 100%)}
+        .engine-switcher .p2p-toggle.active .toggle-thumb{transform:translateX(14px)}
+        .engine-switcher .p2p-toggle .toggle-label{font-size:10px;color:rgba(255,255,255,0.7);user-select:none;white-space:nowrap}
+        .engine-switcher .cast-btn{background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.12);color:rgba(255,255,255,0.85);padding:4px 8px;border-radius:6px;font-size:14px;cursor:pointer;transition:all 0.2s;line-height:1.4;display:flex;align-items:center;justify-content:center;min-width:28px}
+        .engine-switcher .cast-btn:hover{background:rgba(255,255,255,0.18);color:#fff;border-color:rgba(255,255,255,0.25)}
+        .engine-switcher .cast-btn.dlna-cast-stop-btn{background:rgba(211,47,47,0.8);border-color:rgba(211,47,47,0.6);color:#fff}
+        .engine-switcher .cast-btn.dlna-cast-stop-btn:hover{background:rgba(183,28,28,0.9)}
+
+        /* 分辨率下拉菜单 - 集成在引擎切换栏，样式与引擎按钮一致 */
+        .quality-dropdown{position:relative;display:flex;align-items:center}
+        .quality-toggle::after{content:' ▼';font-size:8px;opacity:0.7;margin-left:2px}
+        .quality-menu{position:absolute;top:calc(100% + 6px);right:0;display:none;flex-direction:column;gap:3px;background:rgba(0,0,0,0.85);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);border-radius:8px;padding:5px;border:1px solid rgba(255,255,255,0.15);box-shadow:0 4px 16px rgba(0,0,0,0.5);min-width:80px;z-index:1000000}
+        .quality-menu.show{display:flex}
+        .quality-item{background:transparent;border:none;color:rgba(255,255,255,0.85);padding:5px 12px;border-radius:5px;font-size:11px;cursor:pointer;transition:all 0.15s;white-space:nowrap;line-height:1.4;text-align:center;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;user-select:none}
+        .quality-item:hover{background:rgba(66,133,244,0.7);color:#fff}
+        .quality-item.active{background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);color:#fff;font-weight:600}
+
+        /* ========== PeerTube / Video.js 播放器完整样式覆盖 ========== */
+        /* 防止音频海报模式隐藏 video */
+        .video-js .vjs-tech.vjs-hidden{display:block !important}
+        .video-js.vjs-audio-poster-mode .vjs-poster{display:none !important}
+
+        /* 控制栏：暂停/hover 时显示，播放且无操作时淡出，背景半透明黑色 */
+        .video-js:not(.vjs-controls-disabled):not(.vjs-error) .vjs-control-bar{
+            display:flex !important;visibility:visible !important;opacity:1 !important;
+            pointer-events:auto !important;
+            background:linear-gradient(to top, rgba(0,0,0,.9) 0%, rgba(0,0,0,.5) 60%, transparent 100%) !important;
+        }
+        .video-js.vjs-user-inactive.vjs-playing .vjs-control-bar{opacity:0 !important;pointer-events:none !important}
+        .video-js.vjs-paused .vjs-control-bar{opacity:1 !important}
+        .video-js:hover .vjs-control-bar{opacity:1 !important;visibility:visible !important;pointer-events:auto !important}
+
+        /* 大播放按钮：始终居中 */
+        .video-js .vjs-big-play-button{
+            top:50% !important;left:50% !important;transform:translate(-50%,-50%) !important;
+            margin:0 !important;width:90px !important;height:90px !important;border-radius:50% !important;
+            background-color:rgba(0,0,0,.6) !important;border:2px solid rgba(255,255,255,.3) !important;
+            transition:transform .2s, background-color .2s, opacity .2s;
+            visibility:visible !important;opacity:.9 !important;
+        }
+        .video-js .vjs-big-play-button:hover{transform:translate(-50%,-50%) scale(1.1) !important;background-color:rgba(66,133,244,.85) !important;border-color:rgba(255,255,255,.7) !important}
+        .video-js:not(.vjs-paused):not(.vjs-can-play):not(.vjs-ended) .vjs-big-play-button{opacity:0 !important;visibility:hidden !important}
+
+        /* 右键菜单、设置菜单 - 深色背景白色文字 */
+        .vjs-menu-content,
+        .video-js .vjs-control-bar .vjs-menu .vjs-menu-content{
+            background:rgba(0,0,0,.75) !important;border-radius:6px;overflow:hidden;
+        }
+        .vjs-menu-item{background:transparent !important;color:#fff !important;text-transform:none}
+        .vjs-menu-item:hover,.vjs-menu-item:focus,.vjs-menu-item.vjs-selected{
+            background-color:rgba(66,133,244,.7) !important;color:#fff !important;
+        }
+        .vjs-menu-item-text{color:#fff !important}
+
+        /* 详细统计信息面板 - 白色文字 */
+        .video-js .vjs-stats-content,
+        .peer-tube-player .vjs-stats-info,
+        .vjs-stats-info,
+        .vjs-modal-dialog .vjs-modal-dialog-content{
+            background:rgba(0,0,0,.7) !important;color:#fff !important;
+            backdrop-filter:blur(6px);border-radius:6px;padding:8px 12px;
+        }
+        .video-js .vjs-stats-content *,
+        .peer-tube-player .vjs-stats-info *,
+        .vjs-stats-info *,
+        .vjs-modal-dialog .vjs-modal-dialog-content *{
+            color:#fff !important;background:transparent !important;
+        }
+        .video-js .vjs-stats-close{color:#fff !important;font-size:16px;opacity:.8}
+        .video-js .vjs-stats-close:hover{opacity:1;color:#ff4444 !important}
+
+        /* 右键菜单 - 白色文字 */
+        .video-js .vjs-contextmenu-ui-menu .vjs-menu-content{
+            background:rgba(0,0,0,.85) !important;border-radius:8px;overflow:hidden;padding:4px 0;
+        }
+        .video-js .vjs-contextmenu-ui-menu .vjs-menu-item{
+            background:transparent !important;color:#fff !important;padding:8px 16px;font-size:13px;
+        }
+        .video-js .vjs-contextmenu-ui-menu .vjs-menu-item:hover{background:rgba(66,133,244,.7) !important;color:#fff !important}
+
+        /* 控制栏按钮图标白色 */
+        .video-js .vjs-control-bar .vjs-control{color:#fff !important}
+        .video-js .vjs-control-bar .vjs-icon-placeholder:before{color:#fff !important;text-shadow:0 1px 2px rgba(0,0,0,.5)}
+        .video-js .vjs-time-control{color:#fff !important;text-shadow:0 1px 2px rgba(0,0,0,.5)}
+
+        /* 进度条美化 */
+        .video-js .vjs-play-progress{background-color:rgba(66,133,244,.95) !important}
+        .video-js .vjs-load-progress div{background:rgba(255,255,255,.3) !important}
+        .video-js .vjs-progress-holder{background:rgba(255,255,255,.22) !important}
+        .video-js .vjs-volume-level{background:#fff !important}
+
+        /* PeerTube 特定元素白色文字 */
+        .peertube-player,
+        .peertube-player .vjs-control,
+        .peertube-player .vjs-text,
+        .vjs-peertube-skin .vjs-control,
+        .vjs-peertube-skin .vjs-text{
+            color:#fff !important;
+        }
+
+        @media (max-width:640px){
+            #stats{display:none !important}
+            .engine-switcher{gap:4px;padding:6px 8px;border-radius:10px;position:absolute;top:8px;right:8px;left:8px;bottom:auto;z-index:999999;flex-wrap:wrap}
+            .engine-switcher .switcher-label{display:none}
+            .engine-switcher .p2p-toggle{display:flex !important}
+            .engine-switcher .p2p-toggle .toggle-label{display:none}
+            .engine-switcher .p2p-toggle{padding-left:6px;margin-left:2px;border-left:1px solid rgba(255,255,255,0.2)}
+            .engine-switcher .engine-btn[data-engine]{padding:4px 8px;font-size:11px}
+            .engine-switcher .quality-toggle{padding:4px 8px;font-size:11px}
+            .engine-switcher .cast-btn{padding:4px 8px;font-size:14px}
+            #mobileFsBtn{display:inline-flex !important}
+            .quality-menu{top:calc(100% + 4px);right:0;min-width:65px;padding:4px}
+            .quality-item{padding:4px 8px;font-size:10px}
+            /* PeerTube 移动端适配 */
+            .video-js .vjs-big-play-button{width:56px !important;height:56px !important;border-width:2px !important}
+            .video-js .vjs-big-play-button .vjs-icon-placeholder:before{font-size:30px !important}
+            .video-js .vjs-control-bar{height:42px !important;opacity:1 !important;visibility:visible !important}
+            .video-js .vjs-control-bar .vjs-control{min-width:32px !important;width:32px !important;height:42px !important}
+            .video-js .vjs-control-bar .vjs-icon-placeholder:before{font-size:17px !important}
+            .video-js .vjs-time-control{font-size:11px !important;min-width:38px !important;line-height:42px !important}
+            .video-js .vjs-volume-panel{display:none !important}
+            /* DPlayer 控制栏移动端强制可见 */
+            .dplayer .dplayer-controller{opacity:1 !important;visibility:visible !important;transform:translateY(0) !important}
+            .dplayer.dplayer-hide-controls .dplayer-controller{opacity:1 !important;visibility:visible !important;transform:translateY(0) !important}
+        }
+        #mobileFsBtn{display:none}
+        #playerWrap:fullscreen .engine-switcher,
+        #playerWrap:-webkit-full-screen .engine-switcher{z-index:999999}
+        /* 全屏模式下退出按钮始终可见可点，不受自动隐藏影响 */
+        #playerWrap:fullscreen #mobileFsBtn,
+        #playerWrap:-webkit-full-screen #mobileFsBtn {
+            display: inline-flex !important;
+            opacity: 1 !important;
+            visibility: visible !important;
+            pointer-events: auto !important;
+        }
+        /* 全屏模式下引擎栏半透明常驻，不自动完全隐藏 */
+        #playerWrap:fullscreen .engine-switcher.engine-hidden,
+        #playerWrap:-webkit-full-screen .engine-switcher.engine-hidden {
+            opacity: 0.4 !important;
+            visibility: visible !important;
+            pointer-events: auto !important;
+        }
+        #playerWrap:fullscreen .player-container video,
+        #playerWrap:-webkit-full-screen .player-container video{width:100% !important;height:100% !important}
+        #playProgressTip {
+            position: fixed;
+            bottom: 60px;
+            left: 10px;
+            background: rgba(128, 128, 128, 0.8);
+            color: #fff;
+            padding: 8px 12px;
+            border-radius: 5px;
+            z-index: 9999999;
+            display: none;
+            font-size: 13px;
+            white-space: nowrap;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+        }
+        #playProgressTip .close-btn {
+            display: inline-block;
+            margin-right: 8px;
+            cursor: pointer;
+            color: #ddd;
+            font-size: 16px;
+            font-weight: bold;
+            transition: color 0.2s;
+        }
+        #playProgressTip .close-btn:hover {
+            color: #fff;
+        }
+        #playProgressTip .message {
+            display: inline-block;
+            margin-right: 10px;
+        }
+        #playProgressTip .time {
+            color: #fff;
+            font-weight: bold;
+        }
+        #playProgressTip .btn-jump {
+            display: inline-block;
+            background: transparent;
+            color: #fff;
+            border: 1px solid rgba(255, 255, 255, 0.5);
+            padding: 3px 12px;
+            border-radius: 3px;
+            cursor: pointer;
+            font-size: 12px;
+            transition: all 0.2s;
+        }
+        #playProgressTip .btn-jump:hover {
+            background: rgba(255, 255, 255, 0.2);
+            border-color: #fff;
+        }
+    </style>
+</head>
+<body>
+    <div id="playerWrap">
+    <div class="engine-switcher" id="engineSwitcher">
+        <button class="engine-btn" data-engine="peertube" title="PeerTube 播放器">PeerTube</button>
+        <button class="engine-btn" data-engine="hls" title="原生 HLS.js">HLS</button>
+        <button class="engine-btn active" data-engine="dplayer" title="DPlayer">DPlayer</button>
+        <button class="engine-btn" data-engine="plyr" title="Plyr 播放器">Plyr</button>
+        <div class="quality-dropdown" id="qualityDropdown" style="display:none;">
+            <button class="engine-btn quality-toggle" id="qualityToggle">自动</button>
+            <div class="quality-menu" id="qualityMenu"></div>
+        </div>
+        <div class="p2p-toggle" id="p2pToggle" title="P2P 加速开关">
+            <div class="toggle-track"><div class="toggle-thumb"></div></div>
+            <span class="toggle-label">P2P</span>
+        </div>
+        <div class="quality-dropdown" id="lineDropdown" style="display:none;">
+            <button class="engine-btn quality-toggle" id="lineToggle">线路1</button>
+            <div class="quality-menu" id="lineMenu"></div>
+        </div>
+        <button class="cast-btn" id="dlnaCastBtn" title="投屏 (DLNA)｜仅局域网智能电视 / 盒子支持">📺</button>
+        <button class="cast-btn" id="mobileFsBtn" title="全屏">⛶</button>
+    </div>
+
+    <div id="dplayer" class="player-container active"></div>
+    <div id="peertube-container" class="player-container"></div>
+    <div id="hls-container" class="player-container"></div>
+    <div id="plyr-container" class="player-container"></div>
+    </div>
+    <div id="stats"></div>
+
+    <div id="playProgressTip">
+        <span class="close-btn" onclick="closeProgressTip()" title="关闭">×</span>
+        <span class="message">上次播放至 <span class="time" id="lastPlayTime">00:00</span></span>
+        <button class="btn-jump" onclick="jumpToLastPosition()">跳转</button>
+    </div>
+
+    <script src="./js/hls.min.js"></script>
+    <script src="./js/DPlayer.min.js"></script>
+    <script src="./js/plyr.polyfilled.js"></script>
+    <script src="./js/dlna-cast.js"></script>
+
+    <script type="module">
+    // PHP 注入的配置（使用 json_encode 安全编码，支持中文）
+    const _injectedUrl = '';
+    const _injectedUrl2 = '';
+    const _injectedPic = '';
+    const _injectedTitle = '';
+
+    // ── 基础路径：从 <base> 标签获取，确保深度路径 URL 下资源加载正确 ──
+    const BASE_PATH = (() => {
+        const baseEl = document.querySelector('base[href]');
+        if (baseEl) return new URL(baseEl.getAttribute('href'), window.location.origin).pathname;
+        return '/player/';
+    })();
+    const BASE_URL = window.location.origin + BASE_PATH;
+
+    // ── URL 解析：支持多种形式 ──
+    // 1. ?url=xxx 查询参数
+    // 2. 路径形式（如 /playapi/http://example.com/video.m3u8）
+    // 3. PHP 注入的默认值
+    function parseVideoUrl() {
+        const params = new URLSearchParams(window.location.search);
+        let pic = params.get('pic') || '';
+        let title = params.get('title') || '';
+        let lines = [];
+
+        const repeatedUrls = params.getAll('url');
+        const repeatedNames = params.getAll('name');
+        for (let i = 0; i < repeatedUrls.length; i++) {
+            const u = repeatedUrls[i];
+            const n = (repeatedNames[i] || ('线路' + (i + 1)));
+            if (u) lines.push({ url: u, name: n });
+        }
+
+        for (let i = 1; i <= 10; i++) {
+            const u = params.get('url' + i);
+            if (u) {
+                const n = params.get('name' + i) || ('线路' + (lines.length + 1));
+                lines.push({ url: u, name: n });
+            }
+        }
+
+        if (lines.length === 0 && _injectedUrl) {
+            lines.push({ url: _injectedUrl, name: '线路1' });
+        }
+        if (_injectedUrl2) {
+            lines.push({ url: _injectedUrl2, name: '线路2' });
+        }
+
+        if (lines.length === 0) {
+            const path = window.location.pathname;
+            const match = path.match(/\/(https?:\/\/.+)$/i);
+            if (match) {
+                lines.push({ url: decodeURIComponent(match[1]), name: '默认' });
+            }
+        }
+
+        if (!pic && _injectedPic) pic = _injectedPic;
+        if (!title && _injectedTitle) title = _injectedTitle;
+
+        try {
+            pic = pic ? decodeURIComponent(pic) : pic;
+            lines.forEach(l => { try { l.url = decodeURIComponent(l.url); } catch(e) {} });
+        } catch(e) {}
+
+        return { lines, pic, title };
+    }
+
+    const { lines, pic, videoTitle } = parseVideoUrl();
+    let allLines = lines.length > 0 ? lines : [{ url: '', name: '默认' }];
+    allLines.forEach(l => { l.status = 'checking'; l.latency = -1; });
+    let currentLineIndex = 0;
+    let currentUrl = allLines[0].url;
+
+    window.DLNA_SOURCE_URL = currentUrl;
+
+    // ── 智能线路检测：并发请求，选最优（整体硬超时 1.5s） ──
+    function checkSingleLine(line, timeoutMs) {
+        return new Promise(resolve => {
+            const start = performance.now();
+            const controller = new AbortController();
+            const timer = setTimeout(() => {
+                controller.abort();
+                resolve({ ok: false, latency: -1, reason: 'timeout' });
+            }, timeoutMs);
+
+            fetch(line.url, {
+                method: 'GET',
+                signal: controller.signal,
+                cache: 'no-store',
+                headers: { 'Range': 'bytes=0-1023' }
+            }).then(resp => {
+                clearTimeout(timer);
+                const elapsed = Math.round(performance.now() - start);
+                if (resp.ok || resp.status === 206 || resp.status === 301 || resp.status === 302 || resp.status === 403) {
+                    resolve({ ok: true, latency: elapsed, status: resp.status });
+                } else {
+                    resolve({ ok: false, latency: elapsed, reason: 'http_' + resp.status });
+                }
+            }).catch(err => {
+                clearTimeout(timer);
+                const elapsed = Math.round(performance.now() - start);
+                resolve({ ok: false, latency: elapsed, reason: err.name === 'AbortError' ? 'timeout' : 'network' });
+            });
+        });
+    }
+
+    function latencyColor(ms) {
+        if (ms < 0) return '#999';
+        if (ms <= 300) return '#27ae60';
+        if (ms <= 800) return '#e67e22';
+        return '#e74c3c';
+    }
+
+    async function smartDetectLines(opts) {
+        opts = opts || {};
+        const autoSwitch = opts.autoSwitch !== false;
+        const OVERALL_TIMEOUT = opts.overallTimeout || 1500;
+        const perLineTimeout = opts.perLineTimeout || 1200;
+
+        if (allLines.length <= 1) {
+            if (allLines.length === 1) {
+                allLines[0].status = 'ok';
+                allLines[0].latency = 0;
+                allLines[0].recommended = true;
+            }
+            return 0;
+        }
+
+        const racePromise = Promise.all(allLines.map(l => checkSingleLine(l, perLineTimeout)));
+        const timeoutPromise = new Promise(fail => setTimeout(() => fail(new Error('overall_timeout')), OVERALL_TIMEOUT));
+
+        let results;
+        try {
+            results = await Promise.race([racePromise, timeoutPromise]);
+        } catch(e) {
+            results = allLines.map(() => ({ ok: false, latency: -1, reason: 'overall_timeout' }));
+        }
+
+        let bestIdx = -1;
+        let bestLatency = Infinity;
+        let hasOk = false;
+        const RECOMMEND_MAX_LATENCY = 1500;
+
+        results.forEach((r, i) => {
+            if (r.ok) {
+                allLines[i].status = 'ok';
+                allLines[i].latency = r.latency;
+                hasOk = true;
+                if (r.latency < bestLatency) {
+                    bestLatency = r.latency;
+                    bestIdx = i;
+                }
+            } else {
+                allLines[i].status = 'fail';
+                allLines[i].latency = r.latency;
+            }
+        });
+
+        if (!hasOk) {
+            bestIdx = -1;
+        }
+
+        if (bestLatency > RECOMMEND_MAX_LATENCY) {
+            bestIdx = -1;
+        }
+
+        allLines.forEach((l, i) => {
+            l.recommended = (i === bestIdx);
+        });
+
+        try {
+            window.parent.postMessage({
+                action: 'lineDetectResult',
+                recommended_index: bestIdx,
+                current_index: currentLineIndex,
+                lines: allLines.map(l => ({
+                    name: l.name,
+                    status: l.status,
+                    latency: l.latency,
+                    recommended: l.recommended || false
+                }))
+            }, '*');
+        } catch(e) {}
+
+        const toggle = document.getElementById('lineToggle');
+        const menu = document.getElementById('lineMenu');
+        const dropdown = document.getElementById('lineDropdown');
+
+        if (menu && dropdown) {
+            if (autoSwitch && bestIdx >= 0 && bestIdx !== currentLineIndex) {
+                currentLineIndex = bestIdx;
+                currentUrl = allLines[bestIdx].url;
+                window.DLNA_SOURCE_URL = currentUrl;
+            }
+            if (toggle) toggle.textContent = '线路' + (currentLineIndex + 1);
+            renderLineMenu();
+        }
+
+        return bestIdx;
+    }
+
+    function renderLineMenu() {
+        const menu = document.getElementById('lineMenu');
+        const toggle = document.getElementById('lineToggle');
+        if (!menu) return;
+        menu.innerHTML = '';
+        allLines.forEach((line, i) => {
+            const item = document.createElement('button');
+            let cls = 'quality-item' + (i === currentLineIndex ? ' active' : '');
+            if (line.recommended && line.status === 'ok') cls += ' recommended-hint';
+            else if (line.status === 'fail') cls += ' fail-hint';
+            item.className = cls;
+            let label = '线路' + (i + 1);
+            if (line.recommended && line.status === 'ok') label += ' ⭐推荐';
+            else if (line.status === 'fail') label += ' ❌失效';
+            else if (line.status === 'ok' && line.latency >= 0) label += ` (${line.latency}ms)`;
+            item.textContent = label;
+            item.addEventListener('click', () => switchLine(i));
+            menu.appendChild(item);
+        });
+        if (toggle) {
+            toggle.textContent = '线路' + (currentLineIndex + 1);
+        }
+    }
+
+    // ── 工具函数 ──
+    function formatTime(seconds) {
+        const mins = Math.floor(seconds / 60);
+        const secs = Math.floor(seconds % 60);
+        return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+    }
+
+    function closeProgressTip() {
+        document.getElementById('playProgressTip').style.display = 'none';
+    }
+    window.closeProgressTip = closeProgressTip;
+
+    function jumpToLastPosition() {
+        if (window._videoPlayer && savedProgressTime > 0) {
+            try {
+                const el = getActiveVideoEl();
+                if (el) el.currentTime = savedProgressTime;
+            } catch(e) {}
+            closeProgressTip();
+        }
+    }
+    window.jumpToLastPosition = jumpToLastPosition;
+
+    function getActiveVideoEl() {
+        switch(currentEngine) {
+            case 'dplayer': return playerInstances.dplayer && playerInstances.dplayer.video;
+            case 'hls': return playerInstances.hls && playerInstances.hls.video;
+            case 'plyr': return playerInstances.plyr && playerInstances.plyr.video;
+            case 'peertube': return playerInstances.peertube && playerInstances.peertube.video;
+        }
+        return null;
+    }
+
+    let savedProgressTime = 0;
+    function savePlayProgress(videoId, currentTime, duration) {
+        if (currentTime > 5 && currentTime < duration - 10) {
+            const progressData = {
+                videoId: videoId,
+                currentTime: currentTime,
+                duration: duration,
+                timestamp: Date.now(),
+                title: document.title
+            };
+            try { localStorage.setItem('video_progress_' + videoId, JSON.stringify(progressData)); } catch(e) {}
+        }
+    }
+    function getPlayProgress(videoId) {
+        try {
+            const data = localStorage.getItem('video_progress_' + videoId);
+            if (data) return JSON.parse(data);
+        } catch(e) {}
+        return null;
+    }
+    let _progressTipTimer = null;
+    function showProgressTip(progress) {
+        savedProgressTime = progress.currentTime;
+        document.getElementById('lastPlayTime').innerText = formatTime(progress.currentTime);
+        document.getElementById('playProgressTip').style.display = 'block';
+        if (_progressTipTimer) clearTimeout(_progressTipTimer);
+        _progressTipTimer = setTimeout(closeProgressTip, 7000);
+    }
+    function clearPlayProgress(videoId) {
+        try { localStorage.removeItem('video_progress_' + videoId); } catch(e) {}
+    }
+
+    // ── 视频 ID / swarmId 计算 ──
+    const videoId = (() => {
+        try {
+            const urlPath = window.location.pathname;
+            const match = urlPath.match(/\/play\/(\w+)/);
+            if (match && match[1]) return match[1];
+            const videoUrlMatch = currentUrl.match(/\/([a-f0-9]{8})\//);
+            if (videoUrlMatch && videoUrlMatch[1]) return videoUrlMatch[1];
+            return 'video_' + btoa(currentUrl).substring(0, 16);
+        } catch (e) {
+            return 'video_' + Date.now().toString(36);
+        }
+    })();
+
+    const swarmId = (() => {
+        try {
+            const m1 = currentUrl.match(/\/(20\d{2})\/(\d{2})\/(\d{2})\/([^\/]+)\/(?:[^\/]+\/)?index\.m3u8/i);
+            const m2 = !m1 ? currentUrl.match(/\/(20\d{2})(\d{2})(\d{2})\/([^\/]+)\/(?:[^\/]+\/)?index\.m3u8/i) : null;
+            const m = m1 || m2;
+            if (m) {
+                const canonical = `${m[1]}${m[2]}${m[3]}-${m[4]}`;
+                let h1 = 0x811c9dc5 >>> 0, h2 = (~0x811c9dc5) >>> 0;
+                for (let i = 0; i < canonical.length; i++) {
+                    const c = canonical.charCodeAt(i);
+                    h1 ^= c; h1 = (h1 + ((h1<<1)+(h1<<4)+(h1<<7)+(h1<<8)+(h1<<24))) >>> 0;
+                    h2 ^= (c << 1); h2 = (h2 + ((h2<<1)+(h2<<4)+(h2<<7)+(h2<<8)+(h2<<24))) >>> 0;
+                }
+                return `video-${h1.toString(16).padStart(8,'0')}${h2.toString(16).padStart(8,'0')}`;
+            }
+            const hexMatch = currentUrl.match(/\/([a-f0-9]{8})\/(?:[^\/]+\/)?(?:master|index)\.m3u8/i);
+            if (hexMatch && hexMatch[1]) return `video-${hexMatch[1]}`;
+            const cleanUrl = currentUrl.replace(/\/(low|medium|high|[\d]+k)\//gi, '/');
+            const dirMatch = cleanUrl.match(/\/([^\/]+)\/(?:master|index)\.m3u8$/i);
+            if (dirMatch && dirMatch[1]) {
+                let h1 = 0x811c9dc5 >>> 0, h2 = (~0x811c9dc5) >>> 0;
+                for (let i = 0; i < dirMatch[1].length; i++) {
+                    const c = dirMatch[1].charCodeAt(i);
+                    h1 ^= c; h1 = (h1 + ((h1<<1)+(h1<<4)+(h1<<7)+(h1<<8)+(h1<<24))) >>> 0;
+                    h2 ^= (c << 1); h2 = (h2 + ((h2<<1)+(h2<<4)+(h2<<7)+(h2<<8)+(h2<<24))) >>> 0;
+                }
+                return `video-${h1.toString(16).padStart(8,'0')}${h2.toString(16).padStart(8,'0')}`;
+            }
+            return `video-${btoa(currentUrl).replace(/[^A-Za-z0-9]/g,'').substring(0,16)}`;
+        } catch (e) {
+            return `video-${Date.now().toString(36)}`;
+        }
+    })();
+
+    // ── 全局状态 ──
+    if (typeof window.AUTO_PLAY === 'undefined') window.AUTO_PLAY = true;
+    const DEFAULT_SKIP_SECONDS = 30;
+    let HlsJsP2PEngine = null;
+    let currentEngine = localStorage.getItem('preferred_player_engine') || 'dplayer';
+    let activeVideoElement = null;
+    let activeHlsInstance = null;
+    window._activeHlsInstance = null; // for debugging
+    let lastSavedProgress = 0;
+    let progressCheckTimer = null;
+    let peertubeModule = null; // { PeerTubePlayer, videojs }
+
+    const playerInstances = { dplayer: null, hls: null, plyr: null, peertube: null };
+
+    const stats = {
+        peers: new Map(),
+        httpDownloaded: 0,
+        p2pDownloaded: 0,
+        p2pUploaded: 0
+    };
+
+    const trackers = [
+        'wss://tracker.novage.com.ua',
+        'wss://tracker.webtorrent.dev',
+        'wss://tracker.openwebtorrent.com'
+    ];
+
+    const ios = /iPad|iPhone|iPod/i.test(navigator.userAgent);
+    const andr = /Android/i.test(navigator.userAgent);
+    const isMobile = ios || andr;
+
+    function detectNetworkType() {
+        const conn = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+        const info = { type: 'unknown', isWiFi: false, isCellular: false, isP2PRecommended: true };
+        if (!conn) { info.isP2PRecommended = !isMobile; return info; }
+        if (conn.type) {
+            info.type = conn.type;
+            info.isWiFi = conn.type === 'wifi';
+            info.isCellular = ['cellular', '4g', '3g', '2g'].includes(conn.type);
+        }
+        if (isMobile) {
+            info.isP2PRecommended = info.isWiFi && !info.isCellular;
+        } else {
+            info.isP2PRecommended = true;
+        }
+        return info;
+    }
+
+    let currentNetworkInfo = detectNetworkType();
+    // P2P 默认在非移动端开启；移动端仅 WiFi 下自动开启；localStorage 优先
+    let ENABLE_P2P = (() => {
+        try {
+            const saved = localStorage.getItem('p2p_enabled');
+            if (saved !== null) return saved === 'true';
+        } catch(e) {}
+        return !isMobile || currentNetworkInfo.isWiFi;
+    })();
+
+    // ── P2P 开关 UI ──
+    const p2pToggle = document.getElementById('p2pToggle');
+    function updateP2PToggleUI() {
+        p2pToggle.classList.toggle('active', ENABLE_P2P);
+    }
+    updateP2PToggleUI();
+    p2pToggle.addEventListener('click', () => {
+        ENABLE_P2P = !ENABLE_P2P;
+        try { localStorage.setItem('p2p_enabled', String(ENABLE_P2P)); } catch(e) {}
+        updateP2PToggleUI();
+        resetStats();
+        switchEngine(currentEngine);
+    });
+
+    function setupNetworkMonitoring() {
+        const conn = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+        if (!conn) return;
+        conn.addEventListener('change', () => {
+            const oldNet = currentNetworkInfo;
+            currentNetworkInfo = detectNetworkType();
+            if (oldNet.isP2PRecommended !== currentNetworkInfo.isP2PRecommended) {
+                const msg = currentNetworkInfo.isP2PRecommended
+                    ? '已切换到 WiFi，可点击 P2P 开关启用加速'
+                    : '已切换到移动数据，建议关闭 P2P 以节省流量';
+                showNetworkChangeNotification(msg);
+            }
+        });
+    }
+
+    function showNetworkChangeNotification(message) {
+        const notification = document.createElement('div');
+        notification.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(0,0,0,0.9);color:white;padding:20px 30px;border-radius:8px;font-size:14px;z-index:999999;text-align:center;box-shadow:0 4px 12px rgba(0,0,0,0.5);';
+        notification.innerHTML = `<div>${message}</div><div style="margin-top:10px;"><button style="background:#1890ff;color:white;border:none;padding:8px 16px;border-radius:4px;cursor:pointer;">确定</button></div>`;
+        document.body.appendChild(notification);
+        notification.querySelector('button').addEventListener('click', () => notification.remove());
+        setTimeout(() => { if (notification.parentElement) notification.remove(); }, 8000);
+    }
+
+    function resetStats() {
+        stats.peers.clear();
+        stats.httpDownloaded = 0;
+        stats.p2pDownloaded = 0;
+        stats.p2pUploaded = 0;
+    }
+
+    function setupP2PEvents(engine) {
+        if (!engine) return;
+        engine.addEventListener('onPeerConnect', (details) => {
+            if (details.streamType !== 'main') return;
+            stats.peers.set(details.peerId, { connected: true });
+            updateStats();
+        });
+        engine.addEventListener('onPeerClose', (details) => {
+            if (details.streamType !== 'main') return;
+            stats.peers.delete(details.peerId);
+            updateStats();
+        });
+        engine.addEventListener('onChunkDownloaded', (bytesLength, downloadSource) => {
+            if (downloadSource === 'p2p') stats.p2pDownloaded += bytesLength;
+            else if (downloadSource === 'http') stats.httpDownloaded += bytesLength;
+            updateStats();
+        });
+        engine.addEventListener('onChunkUploaded', (bytesLength) => {
+            stats.p2pUploaded += bytesLength;
+            updateStats();
+        });
+    }
+
+    // ── 从 HlsJsP2PEngine 获取 P2PEngine 构造函数 ──
+    function getP2PEngineClass() {
+        if (!HlsJsP2PEngine) return null;
+        // 尝试多种可能的导出方式
+        if (typeof HlsJsP2PEngine === 'function') return HlsJsP2PEngine;
+        if (HlsJsP2PEngine.P2PEngine && typeof HlsJsP2PEngine.P2PEngine === 'function') return HlsJsP2PEngine.P2PEngine;
+        if (HlsJsP2PEngine.Engine && typeof HlsJsP2PEngine.Engine === 'function') return HlsJsP2PEngine.Engine;
+        if (HlsJsP2PEngine.default && typeof HlsJsP2PEngine.default === 'function') return HlsJsP2PEngine.default;
+        return null;
+    }
+
+    // ── 给已有的 hls 实例附加外置 P2P 引擎 ──
+    let _p2pAttached = false;
+    function attachP2PEngineToHls(hlsInstance) {
+        if (!hlsInstance || _p2pAttached) return false;
+        if (hlsInstance.p2pEngine) {
+            // 已经有 P2P 引擎了，直接绑定 stats
+            setupP2PEvents(hlsInstance.p2pEngine);
+            _p2pAttached = true;
+            return true;
+        }
+        if (!ENABLE_P2P) return false;
+        const P2PEngineClass = getP2PEngineClass();
+        if (!P2PEngineClass) return false;
+        try {
+            const p2pConfig = {
+                core: {
+                    announceTrackers: trackers,
+                    swarmId: swarmId,
+                    simultaneousHttpDownloads: 3,
+                    simultaneousP2PDownloads: 8,
+                    httpDownloadTimeoutPerSegment: 8000,
+                    p2pDownloadTimeoutPerSegment: 6000,
+                    httpErrorRetries: 5,
+                    p2pErrorRetries: 3,
+                    highDemandTimeWindow: 15,
+                    requiredSegmentsPriority: 3,
+                    cachedSegmentExpiration: 600000,
+                    cachedSegmentsCount: 50,
+                    useP2P: true,
+                    p2pNotReceivingBytesTimeoutMs: 3000,
+                    p2pInactiveLoaderDestroyTimeoutMs: 20000,
+                    webRtcMaxMessageSize: 64 * 1024
+                }
+            };
+            const engine = new P2PEngineClass(hlsInstance, p2pConfig);
+            if (engine) {
+                hlsInstance.p2pEngine = engine;
+                setupP2PEvents(engine);
+                _p2pAttached = true;
+                return true;
+            }
+        } catch(e) {
+            console.warn('[PeerTube] 手动附加外置 P2P 引擎失败:', e);
+        }
+        return false;
+    }
+
+    // ── 确保 Hls.js 和 P2P 引擎已加载 ──
+    async function ensureHlsAndP2PLoaded() {
+        // 确保 Hls.js 已加载
+        if (!window.Hls) {
+            // hls.min.js 是通过 <script> 标签加载的，等待加载完成
+            let waits = 0;
+            while (!window.Hls && waits < 50) {
+                await new Promise(r => setTimeout(r, 100));
+                waits++;
+            }
+        }
+
+        // 确保 P2P 引擎已加载
+        if (ENABLE_P2P && !HlsJsP2PEngine) {
+            if (window.HlsJsP2PEngine) {
+                HlsJsP2PEngine = window.HlsJsP2PEngine;
+            } else {
+                try {
+                    const p2pEngineUrl = BASE_PATH + 'js/hlsjs.es.min.js';
+                    const mod = await import(p2pEngineUrl);
+                    HlsJsP2PEngine = mod.HlsJsP2PEngine || mod.default || mod;
+                    if (!HlsJsP2PEngine || !HlsJsP2PEngine.injectMixin) {
+                        if (window.importShim) {
+                            try {
+                                const mod2 = await window.importShim(p2pEngineUrl);
+                                HlsJsP2PEngine = mod2.HlsJsP2PEngine || mod2.default || mod2;
+                            } catch(ie) {}
+                        }
+                    }
+                } catch(e) {
+                    console.warn('P2P 引擎加载失败:', e);
+                    HlsJsP2PEngine = null;
+                    ENABLE_P2P = false;
+                    updateP2PToggleUI();
+                }
+            }
+        }
+    }
+
+    // ── HLS 配置创建（弱网优化版） ──
+    function createHlsConfig() {
+        const baseConfig = {
+            maxBufferLength: 60,
+            maxMaxBufferLength: 120,
+            maxBufferSize: 120 * 1000 * 1000,
+            maxBufferHole: 0.5,
+            lowBufferWatchdogPeriod: 0.3,
+            highBufferWatchdogPeriod: 2,
+            enableWorker: true,
+            enableSoftwareAES: true,
+            startLevel: -1,
+            capLevelToPlayerSize: false,
+            autoStartLoad: true,
+            debug: false,
+            initialLiveManifestSize: 3,
+            manifestLoadingTimeOut: 20000,
+            manifestLoadingMaxRetry: 6,
+            manifestLoadingRetryDelay: 1000,
+            manifestLoadingMaxRetryTimeout: 64000,
+            levelLoadingTimeOut: 20000,
+            levelLoadingMaxRetry: 6,
+            levelLoadingRetryDelay: 1000,
+            levelLoadingMaxRetryTimeout: 64000,
+            fragLoadingTimeOut: 20000,
+            fragLoadingMaxRetry: 6,
+            fragLoadingRetryDelay: 1000,
+            fragLoadingMaxRetryTimeout: 64000,
+            startFragPrefetch: true,
+            testBandwidth: true,
+            abrEwmaFastLive: 3.0,
+            abrEwmaSlowLive: 9.0,
+            abrEwmaFastVoD: 3.0,
+            abrEwmaSlowVoD: 9.0,
+            abrEwmaDefaultEstimate: 500000,
+            abrBandWidthFactor: 0.75,
+            abrBandWidthUpFactor: 0.7,
+            abrMaxWithRealBitrate: false,
+            maxStarvationDelay: 8,
+            maxLoadingDelay: 6,
+            minAutoBitrate: 0,
+            xhrSetup: (xhr) => { xhr.withCredentials = false; },
+            fetchSetup: (context, init) => { init.credentials = 'omit'; return new Request(context.url, init); }
+        };
+        const canUseP2P = ENABLE_P2P && HlsJsP2PEngine && HlsJsP2PEngine.injectMixin;
+        if (canUseP2P) {
+            const HlsWithP2P = HlsJsP2PEngine.injectMixin(window.Hls);
+            const hlsInstance = new HlsWithP2P(Object.assign({}, baseConfig, {
+                p2p: {
+                    core: {
+                        announceTrackers: trackers, swarmId: swarmId,
+                        simultaneousHttpDownloads: 3, simultaneousP2PDownloads: 8,
+                        httpDownloadTimeoutPerSegment: 8000, p2pDownloadTimeoutPerSegment: 6000,
+                        httpErrorRetries: 5, p2pErrorRetries: 3, highDemandTimeWindow: 15,
+                        requiredSegmentsPriority: 3, cachedSegmentExpiration: 600000,
+                        cachedSegmentsCount: 50, useP2P: true,
+                        p2pNotReceivingBytesTimeoutMs: 3000, p2pInactiveLoaderDestroyTimeoutMs: 20000,
+                        webRtcMaxMessageSize: 64 * 1024
+                    },
+                    onHlsJsCreated(hlsIns) {
+                        if (hlsIns && hlsIns.p2pEngine) setupP2PEvents(hlsIns.p2pEngine);
+                    }
+                }
+            }));
+            return hlsInstance;
+        }
+        return new window.Hls(baseConfig);
+    }
+
+    function bindHlsErrorHandlers(hlsInstance) {
+        let mediaErrAttempts = 0, netErrAttempts = 0;
+        const MAX_MEDIA = 5, MAX_NET = 10;
+        hlsInstance.on(window.Hls.Events.ERROR, (event, data) => {
+            if (data.fatal) {
+                switch(data.type) {
+                    case window.Hls.ErrorTypes.NETWORK_ERROR:
+                        netErrAttempts++;
+                        if (netErrAttempts <= MAX_NET) {
+                            const delay = Math.min(1000 * Math.pow(1.5, netErrAttempts - 1), 15000);
+                            document.getElementById('stats').innerText = `⚠️ 网络波动，${(delay/1000).toFixed(0)}秒后重试 (${netErrAttempts}/${MAX_NET})...`;
+                            setTimeout(() => hlsInstance.startLoad(), delay);
+                        } else {
+                            document.getElementById('stats').innerText = '❌ 网络连接不稳定，请检查网络后刷新页面';
+                        }
+                        break;
+                    case window.Hls.ErrorTypes.MEDIA_ERROR:
+                        mediaErrAttempts++;
+                        if (mediaErrAttempts <= MAX_MEDIA) {
+                            document.getElementById('stats').innerText = `⚠️ 媒体错误，正在恢复... (${mediaErrAttempts}/${MAX_MEDIA})`;
+                            setTimeout(() => {
+                                if (mediaErrAttempts <= 2) hlsInstance.recoverMediaError();
+                                else if (mediaErrAttempts <= 4) { hlsInstance.swapAudioCodec(); hlsInstance.recoverMediaError(); }
+                                else {
+                                    try {
+                                        const currentTime = activeVideoElement?.currentTime || 0;
+                                        hlsInstance.destroy();
+                                        const newHls = createHlsConfig();
+                                        activeHlsInstance = newHls;
+                                        bindHlsErrorHandlers(newHls);
+                                        newHls.loadSource(currentUrl);
+                                        if (activeVideoElement) {
+                                            newHls.attachMedia(activeVideoElement);
+                                            activeVideoElement.currentTime = currentTime;
+                                        }
+                                    } catch(e) {}
+                                }
+                            }, 1000);
+                        } else {
+                            document.getElementById('stats').innerText = '❌ 播放失败，请刷新页面';
+                        }
+                        break;
+                    default:
+                        document.getElementById('stats').innerText = '❌ 播放错误，请刷新页面';
+                }
+            }
+        });
+        hlsInstance.on(window.Hls.Events.MANIFEST_PARSED, () => {
+            mediaErrAttempts = 0; netErrAttempts = 0;
+            updateStats();
+            setupQualityUI(hlsInstance);
+        });
+        hlsInstance.on(window.Hls.Events.FRAG_LOADED, () => {
+            netErrAttempts = 0;
+            updateStats();
+        });
+        hlsInstance.on(window.Hls.Events.LEVEL_SWITCHED, () => {
+            updateStats();
+        });
+    }
+
+    function setupProgressForVideo(videoEl) {
+        activeVideoElement = videoEl;
+        if (progressCheckTimer) clearInterval(progressCheckTimer);
+        lastSavedProgress = 0;
+        progressCheckTimer = setInterval(() => {
+            if (videoEl && !videoEl.paused && !videoEl.ended) {
+                if (Math.abs(videoEl.currentTime - lastSavedProgress) > 3) {
+                    savePlayProgress(videoId, videoEl.currentTime, videoEl.duration);
+                    lastSavedProgress = videoEl.currentTime;
+                }
+            }
+        }, 5000);
+        videoEl.addEventListener('ended', () => clearPlayProgress(videoId));
+    }
+
+    function updateStats() {
+        const totalDl = stats.httpDownloaded + stats.p2pDownloaded;
+        const totalMB = (totalDl / 1024 / 1024).toFixed(2);
+        const httpMB = (stats.httpDownloaded / 1024 / 1024).toFixed(2);
+        const p2pMB = (stats.p2pDownloaded / 1024 / 1024).toFixed(2);
+        const uploadMB = (stats.p2pUploaded / 1024 / 1024).toFixed(2);
+        let text = `🌐 ${ENABLE_P2P ? 'P2P加速' : 'HTTP播放'}`;
+        if (isMobile && currentNetworkInfo) {
+            if (currentNetworkInfo.isWiFi) text += ' | 📶 WiFi';
+            else if (currentNetworkInfo.isCellular) text += ' | 📱 移动数据';
+        }
+        if (ENABLE_P2P) {
+            text += stats.peers.size > 0 ? ` | 🔗 ${stats.peers.size}节点` : ' | 🔗 寻找节点...';
+        }
+        text += ` | 📊 ${totalMB}MB`;
+        if (totalDl > 0) text += ` (H:${httpMB} P:${p2pMB})`;
+        if (ENABLE_P2P) text += ` | ⬆️ ${uploadMB}MB`;
+        let h = 0, w = 0;
+        if (activeHlsInstance && activeHlsInstance.levels && activeHlsInstance.levels.length > 0) {
+            // 获取当前实际播放 level：loadLevel 在自动模式下返回实际加载的 level
+            let lvl = activeHlsInstance.currentLevel;
+            if (lvl < 0) {
+                // 自动模式：使用 loadLevel 获取实际加载的 level
+                lvl = activeHlsInstance.loadLevel;
+            }
+            if (lvl < 0 || lvl >= activeHlsInstance.levels.length) {
+                // 如果还是无效，使用 video 元素的尺寸
+                lvl = -1;
+            }
+            if (lvl >= 0 && lvl < activeHlsInstance.levels.length) {
+                const l = activeHlsInstance.levels[lvl];
+                h = parseInt(l.height) || 0; w = parseInt(l.width) || 0;
+                if ((!h || !w) && l.attrs && l.attrs.RESOLUTION) {
+                    const rm = l.attrs.RESOLUTION.match(/(\d+)x(\d+)/);
+                    if (rm) { w = parseInt(rm[1])||0; h = parseInt(rm[2])||0; }
+                }
+            }
+        }
+        if (!h && activeVideoElement) {
+            h = activeVideoElement.videoHeight || 0;
+            w = activeVideoElement.videoWidth || 0;
+        }
+        let emoji = '🔄', name = '自动';
+        if (h >= 2160) { emoji='🏆'; name=`4K`; }
+        else if (h >= 1080) { emoji='🏆'; name=`超清(${h}p)`; }
+        else if (h >= 720) { emoji='💎'; name=`高清(${h}p)`; }
+        else if (h >= 480) { emoji='⭐'; name=`标清(${h}p)`; }
+        else if (h > 0) { emoji='📱'; name=`流畅(${h}p)`; }
+        text += ` | ${emoji}${name}`;
+        if (w && h) {
+            const score = Math.max(80, Math.min(99, Math.floor(h/1080*99)));
+            text += ` | 🎨${score} ${w}x${h}`;
+        }
+        document.getElementById('stats').innerText = text;
+    }
+
+    function destroyAllPlayers() {
+        if (playerInstances.dplayer) {
+            try {
+                if (playerInstances.dplayer.hls) playerInstances.dplayer.hls.destroy();
+            } catch(e){}
+            try { playerInstances.dplayer.dp.destroy(); } catch(e){}
+            playerInstances.dplayer = null;
+        }
+        if (playerInstances.hls) {
+            try { if (playerInstances.hls.hls) playerInstances.hls.hls.destroy(); } catch(e){}
+            playerInstances.hls = null;
+        }
+        if (playerInstances.plyr) {
+            try { if (playerInstances.plyr.hls) playerInstances.plyr.hls.destroy(); } catch(e){}
+            try { if (playerInstances.plyr.plyr) playerInstances.plyr.plyr.destroy(); } catch(e){}
+            playerInstances.plyr = null;
+        }
+        if (playerInstances.peertube) {
+            try { if (playerInstances.peertube._statsTimer) clearInterval(playerInstances.peertube._statsTimer); } catch(e) {}
+            try { if (playerInstances.peertube.ptPlayer) playerInstances.peertube.ptPlayer.destroy(); } catch(e){}
+            playerInstances.peertube = null;
+        }
+        activeVideoElement = null;
+        activeHlsInstance = null;
+        _p2pAttached = false;
+        document.getElementById('hls-container').innerHTML = '';
+        document.getElementById('plyr-container').innerHTML = '';
+        document.getElementById('peertube-container').innerHTML = '';
+        document.getElementById('dplayer').innerHTML = '';
+        hideQualityUI();
+    }
+
+    function showContainer(engine) {
+        document.querySelectorAll('.player-container').forEach(el => el.classList.remove('active'));
+        const map = { dplayer: 'dplayer', hls: 'hls-container', plyr: 'plyr-container', peertube: 'peertube-container' };
+        const id = map[engine];
+        if (id) document.getElementById(id).classList.add('active');
+    }
+
+    function tryAutoPlay(videoEl) {
+        if (window.AUTO_PLAY === false) return;
+        const p = videoEl.play();
+        if (p !== undefined) {
+            p.catch(() => {
+                videoEl.muted = true;
+                videoEl.play().catch(() => {});
+            });
+        }
+    }
+
+    // ── 统一清晰度切换 UI ──
+    function getQualityLabel(level, index) {
+        if (!level) return '自动';
+        var h = level.height || 0;
+        if (h >= 2160) return '4K';
+        if (h >= 1440) return '2K';
+        if (h >= 1080) return '1080P';
+        if (h >= 720) return '720P';
+        if (h >= 480) return '480P';
+        if (h >= 360) return '360P';
+        if (h > 0) return h + 'P';
+        var bw = level.bitrate || 0;
+        if (bw >= 5000000) return '超清';
+        if (bw >= 2500000) return '高清';
+        if (bw >= 1000000) return '标清';
+        if (bw > 0) return '流畅';
+        return '清晰度' + (index + 1);
+    }
+
+    let _currentQualityHls = null;
+
+    function setupQualityUI(hls) {
+        var dropdown = document.getElementById('qualityDropdown');
+        var toggle = document.getElementById('qualityToggle');
+        var menu = document.getElementById('qualityMenu');
+        if (!dropdown || !toggle || !menu) return;
+        if (!hls) { dropdown.style.display = 'none'; return; }
+
+        _currentQualityHls = hls;
+
+        function buildMenu() {
+            var levels = hls.levels || [];
+            if (levels.length <= 1) { dropdown.style.display = 'none'; return; }
+            dropdown.style.display = 'flex';
+            menu.innerHTML = '';
+
+            var sortedIndices = [];
+            for (var i = 0; i < levels.length; i++) sortedIndices.push(i);
+            sortedIndices.sort(function(a, b) {
+                var ha = levels[a].height || 0;
+                var hb = levels[b].height || 0;
+                if (ha !== hb) return hb - ha;
+                return (levels[b].bitrate || 0) - (levels[a].bitrate || 0);
+            });
+
+            var autoItem = document.createElement('button');
+            autoItem.className = 'quality-item active';
+            autoItem.textContent = '自动';
+            autoItem.dataset.level = '-1';
+            autoItem.onclick = function() {
+                hls.currentLevel = -1;
+                updateActiveState(-1);
+                menu.classList.remove('show');
+            };
+            menu.appendChild(autoItem);
+
+            for (var si = 0; si < sortedIndices.length; si++) {
+                (function(levelIdx) {
+                    var item = document.createElement('button');
+                    item.className = 'quality-item';
+                    item.textContent = getQualityLabel(levels[levelIdx], levelIdx);
+                    item.dataset.level = String(levelIdx);
+                    item.onclick = function() {
+                        hls.currentLevel = levelIdx;
+                        updateActiveState(levelIdx);
+                        menu.classList.remove('show');
+                    };
+                    menu.appendChild(item);
+                })(sortedIndices[si]);
+            }
+            updateActiveState();
+        }
+
+        function updateActiveState(curLevel) {
+            var items = menu.querySelectorAll('.quality-item');
+            var cur = (typeof curLevel === 'number') ? curLevel : hls.currentLevel;
+            var autoEnabled = (cur === -1 || hls.autoLevelEnabled);
+            var toggleText = '自动';
+
+            items.forEach(function(item) {
+                item.classList.remove('active');
+                var lv = parseInt(item.dataset.level, 10);
+                var isAuto = (lv === -1);
+
+                if (isAuto && autoEnabled) {
+                    item.classList.add('active');
+                    toggleText = '自动';
+                } else if (!autoEnabled && lv === cur) {
+                    item.classList.add('active');
+                    toggleText = item.textContent;
+                }
+            });
+
+            toggle.textContent = toggleText;
+        }
+
+        toggle.onclick = function(e) {
+            e.stopPropagation();
+            menu.classList.toggle('show');
+        };
+
+        function closeMenu(e) {
+            if (!dropdown.contains(e.target)) {
+                menu.classList.remove('show');
+            }
+        }
+        document.removeEventListener('click', closeMenu);
+        document.addEventListener('click', closeMenu);
+
+        if (hls.levels && hls.levels.length > 0) buildMenu();
+
+        hls.on(window.Hls.Events.MANIFEST_PARSED, buildMenu);
+        hls.on(window.Hls.Events.LEVEL_SWITCHED, function() {
+            updateActiveState();
+        });
+    }
+
+    function hideQualityUI() {
+        var dropdown = document.getElementById('qualityDropdown');
+        if (dropdown) dropdown.style.display = 'none';
+        _currentQualityHls = null;
+    }
+
+    // ── 从 master.m3u8 解析分辨率列表 ──
+    async function fetchM3u8Levels(m3u8Url) {
+        try {
+            const resp = await fetch(m3u8Url);
+            const text = await resp.text();
+            const levels = [];
+            const lines = text.split('\n');
+            for (let i = 0; i < lines.length; i++) {
+                const line = lines[i].trim();
+                if (line.startsWith('#EXT-X-STREAM-INF:')) {
+                    const resMatch = line.match(/RESOLUTION=([^,\s]+)/);
+                    const bwMatch = line.match(/BANDWIDTH=([^,\s]+)/);
+                    const nameMatch = line.match(/NAME="([^"]+)"/);
+                    let label = '';
+                    let height = 0;
+                    if (resMatch) {
+                        const wh = resMatch[1].split('x');
+                        height = parseInt(wh[1]) || 0;
+                        if (height >= 2160) label = '4K';
+                        else if (height >= 1080) label = '1080P';
+                        else if (height >= 720) label = '720P';
+                        else if (height >= 480) label = '480P';
+                        else if (height > 0) label = height + 'P';
+                    }
+                    if (nameMatch && !label) label = nameMatch[1];
+                    if (!label && bwMatch) {
+                        const bw = parseInt(bwMatch[1]) || 0;
+                        label = bw > 2000000 ? '超清' : bw > 800000 ? '高清' : '标清';
+                    }
+                    if (!label) label = '自动';
+                    const nextLine = (lines[i + 1] || '').trim();
+                    if (nextLine && !nextLine.startsWith('#')) {
+                        let subUrl = nextLine;
+                        if (!subUrl.startsWith('http')) {
+                            const base = m3u8Url.substring(0, m3u8Url.lastIndexOf('/') + 1);
+                            subUrl = base + subUrl;
+                        }
+                        levels.push({ name: label, url: subUrl, type: 'variant', height: height });
+                    }
+                }
+            }
+            levels.sort((a, b) => (b.height || 0) - (a.height || 0));
+            return levels;
+        } catch (e) {
+            return [];
+        }
+    }
+
+    // ── DPlayer 初始化 ──
+    function initDPlayer(resumeTime) {
+        document.getElementById('dplayer').innerHTML = '';
+
+        // 创建 HLS 实例
+        const hlsInstance = createHlsConfig();
+        activeHlsInstance = hlsInstance;
+        bindHlsErrorHandlers(hlsInstance);
+
+        const dp = new window.DPlayer({
+            container: document.getElementById('dplayer'),
+            autoplay: window.AUTO_PLAY !== false,
+            video: {
+                url: currentUrl,
+                pic: pic,
+                type: 'customHls',
+                customType: {
+                    customHls: function(video) {
+                        hlsInstance.attachMedia(video);
+                        hlsInstance.loadSource(currentUrl);
+                    }
+                }
+            },
+            theme: '#4285f4',
+            lang: 'zh-cn',
+            hotkey: true,
+            volume: 0.7,
+            muted: false,
+            controls: true,
+            danmaku: false,
+            contextmenu: [],
+            highlight: []
+        });
+
+        playerInstances.dplayer = { dp: dp, hls: hlsInstance };
+        const videoEl = dp.video;
+        videoEl.setAttribute('playsinline', 'true');
+        videoEl.setAttribute('webkit-playsinline', 'true');
+        videoEl.setAttribute('preload', 'auto');
+        setupProgressForVideo(videoEl);
+
+        dp.on('canplay', () => updateStats());
+        dp.on('playing', () => updateStats());
+        dp.on('waiting', () => updateStats());
+        dp.on('canplaythrough', () => updateStats());
+        dp.on('volumechange', () => updateStats());
+        dp.on('error', () => { document.getElementById('stats').innerText = '❌ 播放错误'; });
+
+        window._videoPlayer = {
+            seek: (t) => { videoEl.currentTime = t; videoEl.play(); }
+        };
+
+        const savedProgress = getPlayProgress(videoId);
+        let startAt = DEFAULT_SKIP_SECONDS;
+        if (resumeTime > 3) {
+            startAt = resumeTime;
+        } else if (savedProgress && savedProgress.currentTime > DEFAULT_SKIP_SECONDS + 5) {
+            startAt = savedProgress.currentTime;
+        }
+        if (startAt > 0) {
+            videoEl.addEventListener('loadedmetadata', () => {
+                videoEl.currentTime = startAt;
+                if (savedProgress && resumeTime <= 3 && savedProgress.currentTime > DEFAULT_SKIP_SECONDS + 5) setTimeout(() => showProgressTip(savedProgress), 800);
+            }, { once: true });
+        } else if (savedProgress && savedProgress.currentTime > DEFAULT_SKIP_SECONDS + 5) {
+            setTimeout(() => showProgressTip(savedProgress), 1000);
+        }
+
+        setTimeout(() => { tryAutoPlay(videoEl); updateStats(); }, 300);
+    }
+
+    // ── 原生 HLS 播放器 ──
+    function initHlsPlayer(resumeTime) {
+        const container = document.getElementById('hls-container');
+        container.innerHTML = '';
+        const video = document.createElement('video');
+        video.controls = true; video.playsInline = true;
+        video.setAttribute('webkit-playsinline', 'true');
+        video.poster = pic; video.style.width = '100%'; video.style.height = '100%'; video.style.background = '#000';
+        container.appendChild(video);
+
+        const hlsInstance = createHlsConfig();
+        activeHlsInstance = hlsInstance;
+        bindHlsErrorHandlers(hlsInstance);
+        hlsInstance.loadSource(currentUrl);
+        hlsInstance.attachMedia(video);
+
+        // 自动播放（bindHlsErrorHandlers 已处理清晰度 UI 和统计更新）
+        hlsInstance.on(window.Hls.Events.MANIFEST_PARSED, () => { tryAutoPlay(video); });
+
+        playerInstances.hls = { hls: hlsInstance, video: video };
+        setupProgressForVideo(video);
+
+        window._videoPlayer = {
+            seek: (t) => { video.currentTime = t; video.play(); }
+        };
+
+        const savedProgress = getPlayProgress(videoId);
+        let startAt = DEFAULT_SKIP_SECONDS;
+        if (resumeTime > 0) startAt = resumeTime;
+        else if (savedProgress && savedProgress.currentTime > DEFAULT_SKIP_SECONDS + 5) startAt = savedProgress.currentTime;
+        video.addEventListener('loadedmetadata', () => {
+            if (startAt > 0) video.currentTime = startAt;
+            if (savedProgress && !resumeTime && savedProgress.currentTime > DEFAULT_SKIP_SECONDS + 5) setTimeout(() => showProgressTip(savedProgress), 800);
+        }, { once: true });
+        if (savedProgress && savedProgress.currentTime > DEFAULT_SKIP_SECONDS + 5 && !resumeTime) {
+            setTimeout(() => showProgressTip(savedProgress), 1000);
+        }
+    }
+
+    // ── Plyr 播放器 ──
+    function initPlyrPlayer(resumeTime) {
+        const container = document.getElementById('plyr-container');
+        container.innerHTML = '';
+        const video = document.createElement('video');
+        video.playsInline = true; video.setAttribute('webkit-playsinline', 'true');
+        video.poster = pic;
+        container.appendChild(video);
+
+        const hlsInstance = createHlsConfig();
+        activeHlsInstance = hlsInstance;
+        bindHlsErrorHandlers(hlsInstance);
+        hlsInstance.loadSource(currentUrl);
+        hlsInstance.attachMedia(video);
+
+        // 使用本地 SVG sprite，避免依赖 cdn.plyr.io 造成 ERR_FAILED
+        const plyrBase = BASE_URL;
+        const plyrInstance = new window.Plyr(video, {
+            controls: ['play-large', 'play', 'progress', 'current-time', 'mute', 'volume', 'settings', 'pip', 'airplay', 'fullscreen'],
+            settings: ['quality', 'speed'], autoplay: window.AUTO_PLAY !== false,
+            iconUrl: plyrBase + 'css/plyr.svg',
+            blankUrl: 'data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 18 18\'%3E%3C/svg%3E'
+        });
+
+        // 自动播放（bindHlsErrorHandlers 已处理清晰度 UI 和统计更新）
+        hlsInstance.on(window.Hls.Events.MANIFEST_PARSED, () => { tryAutoPlay(video); });
+
+        playerInstances.plyr = { plyr: plyrInstance, hls: hlsInstance, video: video };
+        setupProgressForVideo(video);
+
+        window._videoPlayer = {
+            seek: (t) => { video.currentTime = t; video.play(); }
+        };
+
+        const savedProgress = getPlayProgress(videoId);
+        let startAt = DEFAULT_SKIP_SECONDS;
+        if (resumeTime > 0) startAt = resumeTime;
+        else if (savedProgress && savedProgress.currentTime > DEFAULT_SKIP_SECONDS + 5) startAt = savedProgress.currentTime;
+        video.addEventListener('loadedmetadata', () => {
+            if (startAt > 0) video.currentTime = startAt;
+            if (savedProgress && !resumeTime && savedProgress.currentTime > DEFAULT_SKIP_SECONDS + 5) setTimeout(() => showProgressTip(savedProgress), 800);
+        }, { once: true });
+        if (savedProgress && savedProgress.currentTime > DEFAULT_SKIP_SECONDS + 5 && !resumeTime) {
+            setTimeout(() => showProgressTip(savedProgress), 1000);
+        }
+    }
+
+    // ── PeerTube 播放器（修复版） ──
+    async function initPeerTubePlayer(resumeTime) {
+        const container = document.getElementById('peertube-container');
+        container.innerHTML = '';
+        hideQualityUI();
+
+        // 确保 Hls.js 和外置 p2p-media-loader 已加载
+        if (ENABLE_P2P && (!HlsJsP2PEngine || !window.Hls)) {
+            await ensureHlsAndP2PLoaded();
+        }
+
+        // 如果 P2P 启用，先用外置 p2p-media-loader 包装全局 Hls
+        // 这样 PeerTube 内部创建的 HLS 实例会自动带上外置 P2P 引擎
+        if (ENABLE_P2P && HlsJsP2PEngine && HlsJsP2PEngine.injectMixin && window.Hls) {
+            try {
+                HlsJsP2PEngine.injectMixin(window.Hls);
+            } catch(e) {
+                console.warn('[PeerTube] 外置 P2P 注入 Hls 失败:', e);
+            }
+        }
+
+        // 确保 PeerTube 模块已加载
+        if (!peertubeModule) {
+            try {
+                const ptBase = BASE_URL + 'js/peertube/';
+                const cacheBust = '?v=' + Date.now();
+                peertubeModule = await import(/* @vite-ignore */ ptBase + 'peertube-player.js' + cacheBust);
+            } catch(e) {
+                console.error('PeerTube 模块加载失败:', e);
+                document.getElementById('stats').innerText = '❌ PeerTube 模块加载失败，请切换其他引擎';
+                return;
+            }
+        }
+
+        const { PeerTubePlayer, videojs } = peertubeModule;
+        if (!PeerTubePlayer) {
+            document.getElementById('stats').innerText = '❌ PeerTube 播放器不可用，请切换其他引擎';
+            return;
+        }
+
+        // 添加中文语言
+        const ZH_TRANSLATIONS = {
+            "Quality": "画质", "Auto": "自动", "Speed": "速度", "Subtitles/CC": "字幕",
+            "Peers": "观众", "peers": "个观众", "peer": "个观众", "no peers": "无观众",
+            "Settings": "设置", "Stats for nerds": "详细统计信息", "Theater mode": "剧场模式",
+            "Copy the video URL": "复制视频网址", "Copy embed code": "复制嵌入代码",
+            "Video UUID": "视频 UUID", "Viewport / Frames": "视区 / 帧数", "Resolution": "分辨率",
+            "Volume": "音量", "Codecs": "编解码器", "Connection Speed": "连接速度",
+            "Network Activity": "网络活动", "Total Transfered": "传输总量", "Download Breakdown": "下载明细",
+            "Buffer Progress": "缓冲进度", "Buffer State": "缓冲状态", "P2P": "对等网络",
+            "enabled": "已启用", "disabled": "已禁用", "Player mode": "播放器模式", "Play in loop": "循环播放",
+            "{1} from servers · {2} from peers": "{1} 来自服务器 · {2} 来自对等用户",
+            "{1} / {2} dropped of {3}": "{1} / 丢帧 {2}，共 {3} 帧",
+            "P2P Media Loader (v2)": "P2P 媒体加载器 (v2)", "Web Video": "网页视频",
+            "{1} (from edge: {2})": "{1}（来自边缘：{2}）",
+            "Uses P2P, others may know you are watching this video.": "使用对等网络时，其他人可能会知道你正在观看此视频。",
+            "Fullscreen": "全屏", "Non-Fullscreen": "退出全屏", "Mute": "静音", "Unmute": "取消静音",
+            "Playback Rate": "播放速度", "Subtitles": "字幕", "subtitles off": "字幕已关闭",
+            "Volume Level": "音量", "Play Video": "播放视频",
+            "Video Player is loading.": "视频播放器加载中",
+            "If the player doesn't launch, try to restart your web browser.": "如果播放器无法启动，请尝试重启浏览器。",
+            "Previous video": "上一个视频", "Next video": "下一个视频",
+            "Disable subtitles": "禁用字幕", "Enable {1} subtitle": "启用{1}字幕",
+            "Go back": "返回", "Audio only": "仅音频", "Close": "关闭",
+            "Video Filter": "视频滤镜", "Mirror Video": "镜像视频", "Mirror": "镜像", "Off": "关闭",
+            "Play": "播放", "Pause": "暂停", "Current Time": "当前时间", "Duration": "时长",
+            "Picture in Picture": "画中画", "Loop": "循环", "Normal": "正常"
+        };
+        try {
+            videojs.addLanguage('zh', ZH_TRANSLATIONS);
+            videojs.addLanguage('zh-CN', ZH_TRANSLATIONS);
+            videojs.addLanguage('zh-Hans-CN', ZH_TRANSLATIONS);
+        } catch(e) {}
+
+        // 创建 video 元素
+        const videoEl = document.createElement('video');
+        videoEl.className = 'video-js vjs-peertube-skin';
+        videoEl.setAttribute('playsinline', 'true');
+        videoEl.setAttribute('webkit-playsinline', 'true');
+        videoEl.style.width = '100%';
+        videoEl.style.height = '100%';
+        videoEl.style.display = 'block';
+        if (pic) videoEl.poster = pic;
+        container.appendChild(videoEl);
+
+        // 确保 STUN 服务器非空
+        const stunServers = [
+            'stun:stun.l.google.com:19302',
+            'stun:stun1.l.google.com:19302',
+            'stun:stun2.l.google.com:19302'
+        ];
+
+        // 确保 trackers 非空
+        const peerTrackers = (trackers && trackers.length > 0) ? trackers : [
+            'wss://tracker.novage.com.ua',
+            'wss://tracker.openwebtorrent.com',
+            'wss://tracker.webtorrent.dev'
+        ];
+
+        // PluginsManager：强制禁用内置 P2P（使用外置 p2p-media-loader）
+        const pluginsManager = {
+            runHook: function(hookName, resultArg) {
+                if (hookName === 'filter:internal.player.p2p-media-loader.options.result') {
+                    var opts = resultArg || { loader: {} };
+                    // 禁用 PeerTube 内置 P2P，统一使用外置 p2p-media-loader
+                    opts.p2pEnabled = false;
+                    if (opts.loader) {
+                        opts.loader.isP2PDisabled = true;
+                    }
+                    return Promise.resolve(opts);
+                }
+                return Promise.resolve(resultArg);
+            },
+            ensurePluginsAreLoaded: function() {
+                return Promise.resolve();
+            },
+            loadPluginsList: function() {}
+        };
+
+        let ptInstance = null;
+        let vjsPlayer = null;
+
+        try {
+            ptInstance = new PeerTubePlayer({
+                playerElement: () => videoEl,
+                controls: true,
+                controlBar: true,
+                muted: false,
+                loop: false,
+                peertubeLink: () => false,
+                enableHotkeys: true,
+                inactivityTimeout: 2500,
+                videoViewIntervalMs: 30000,
+                instanceName: videoTitle || 'PeerTube Player',
+                theaterButton: false,
+                authorizationHeader: () => '',
+                metricsUrl: '',
+                metricsInterval: 0,
+                serverUrl: window.location.origin,
+                errorNotifier: (msg) => {
+                    console.error('[PeerTube Player]', msg);
+                },
+                language: 'zh-Hans-CN',
+                pluginsManager: pluginsManager,
+                stunServers: stunServers
+            });
+        } catch (e) {
+            console.error('PeerTube 实例创建失败:', e);
+            document.getElementById('stats').innerText = '❌ PeerTube 初始化失败: ' + (e.message || e) + '，请切换其他引擎';
+            return;
+        }
+
+        // 构建绝对 URL
+        let absoluteVideoUrl = currentUrl;
+        if (currentUrl.startsWith('/')) {
+            absoluteVideoUrl = window.location.origin + currentUrl;
+        }
+
+        let m3u8Levels = [];
+        try {
+            m3u8Levels = await fetchM3u8Levels(currentUrl);
+        } catch(e) {
+            console.warn('解析 m3u8 失败，使用默认配置:', e);
+        }
+
+        let videoFiles;
+        if (m3u8Levels.length > 0) {
+            videoFiles = m3u8Levels.map((lv) => ({
+                fileUrl: lv.url,
+                resolution: { id: lv.height || 720, label: lv.name || (lv.height ? lv.height + 'p' : '自动') },
+                size: 0,
+                fps: 30
+            }));
+        } else {
+            videoFiles = [{ fileUrl: absoluteVideoUrl, resolution: { id: 0, label: '自动' }, size: 0, fps: 30 }];
+        }
+
+        const isHLS = currentUrl.indexOf('.m3u8') !== -1 || currentUrl.indexOf('m3u8') !== -1;
+
+        const loadOpts = {
+            mode: 'p2p-media-loader',
+            theme: 'lucide',
+            autoplay: window.AUTO_PLAY !== false,
+            forceAutoplay: window.AUTO_PLAY !== false,
+            p2pEnabled: false,
+            isLive: false,
+            thumbnails: [],
+            videoViewUrl: '',
+            embedUrl: '',
+            embedTitle: videoTitle || 'Video',
+            videoUUID: swarmId,
+            videoShortUUID: (videoId || 'video').substring(0, 8),
+            duration: 0,
+            videoRatio: 16/9,
+            requiresUserAuth: false,
+            videoFileToken: () => '',
+            requiresPassword: false,
+            videoPassword: () => '',
+            nextVideo: { enabled: false, getVideoTitle: () => '', displayControlBarButton: false },
+            previousVideo: { enabled: false, displayControlBarButton: false },
+            videoCaptions: [],
+            videoChapters: [],
+            storyboard: null,
+            startTime: resumeTime || 0
+        };
+
+        if (isHLS) {
+            loadOpts.hls = {
+                playlistUrl: absoluteVideoUrl,
+                segmentsSha256Url: '',  // 空字符串禁用 sha256 校验
+                trackerAnnounce: peerTrackers,
+                redundancyBaseUrls: [],
+                videoFiles: videoFiles,
+                swarmId: swarmId
+            };
+        } else {
+            loadOpts.mode = 'web-video';
+            loadOpts.webVideo = { videoFiles: videoFiles };
+        }
+
+        // 关键：在 load 之前包装 buildPlayerIfNeeded，以便在 vjsPlayer 创建后立即注册事件监听
+        var hlsInstanceReady = false;
+        var originalBuildPlayerIfNeeded = ptInstance.buildPlayerIfNeeded.bind(ptInstance);
+        ptInstance.buildPlayerIfNeeded = async function() {
+            await originalBuildPlayerIfNeeded();
+            var vp = this.player;
+            if (vp && !hlsInstanceReady) {
+                hlsInstanceReady = true;
+                // 监听 hlsjs-initialized 获取 HLS 实例
+                vp.on('hlsjs-initialized', function(evt, data) {
+                    var hls = data && data.hlsjs;
+                    if (!hls) return;
+                    activeHlsInstance = hls;
+                    // 设置清晰度 UI
+                    setupQualityUI(hls);
+                    // 附加外置 P2P 引擎（如果还没有的话）并绑定 stats
+                    attachP2PEngineToHls(hls);
+                    updateStats();
+                });
+            }
+        };
+
+        try {
+            await ptInstance.load(loadOpts);
+        } catch (loadErr) {
+            console.error('PeerTube p2p-media-loader 模式加载失败，尝试 web-video 模式:', loadErr);
+            // 回退到 web-video 模式
+            try {
+                container.innerHTML = '';
+                var fallbackVideo = document.createElement('video');
+                fallbackVideo.className = 'video-js vjs-peertube-skin';
+                fallbackVideo.setAttribute('playsinline', 'true');
+                fallbackVideo.setAttribute('webkit-playsinline', 'true');
+                fallbackVideo.style.width = '100%';
+                fallbackVideo.style.height = '100%';
+                fallbackVideo.style.display = 'block';
+                if (pic) fallbackVideo.poster = pic;
+                container.appendChild(fallbackVideo);
+
+                ptInstance = new PeerTubePlayer({
+                    playerElement: () => fallbackVideo,
+                    controls: true,
+                    controlBar: true,
+                    muted: false,
+                    loop: false,
+                    peertubeLink: () => false,
+                    enableHotkeys: true,
+                    inactivityTimeout: 2500,
+                    instanceName: videoTitle || 'PeerTube Player',
+                    theaterButton: false,
+                    authorizationHeader: () => '',
+                    metricsUrl: '',
+                    metricsInterval: 0,
+                    serverUrl: window.location.origin,
+                    errorNotifier: (msg) => console.error('[PeerTube]', msg),
+                    language: 'zh-Hans-CN',
+                    pluginsManager: pluginsManager,
+                    stunServers: stunServers
+                });
+
+                var fallbackOpts = {
+                    mode: 'web-video',
+                    theme: 'lucide',
+                    autoplay: window.AUTO_PLAY !== false,
+                    forceAutoplay: window.AUTO_PLAY !== false,
+                    p2pEnabled: false,
+                    isLive: false,
+                    thumbnails: [],
+                    videoViewUrl: '',
+                    embedUrl: '',
+                    embedTitle: videoTitle || 'Video',
+                    videoUUID: swarmId,
+                    videoShortUUID: (videoId || 'video').substring(0, 8),
+                    duration: 0,
+                    videoRatio: 16/9,
+                    requiresUserAuth: false,
+                    videoFileToken: () => '',
+                    requiresPassword: false,
+                    videoPassword: () => '',
+                    nextVideo: { enabled: false, getVideoTitle: () => '', displayControlBarButton: false },
+                    previousVideo: { enabled: false, displayControlBarButton: false },
+                    videoCaptions: [],
+                    videoChapters: [],
+                    storyboard: null,
+                    startTime: resumeTime || 0,
+                    webVideo: { videoFiles: videoFiles }
+                };
+
+                await ptInstance.load(fallbackOpts);
+                videoEl = fallbackVideo;
+            } catch (fallbackErr) {
+                console.error('PeerTube 回退也失败:', fallbackErr);
+                document.getElementById('stats').innerText = '❌ PeerTube 播放失败，请切换其他引擎';
+                return;
+            }
+        }
+
+        vjsPlayer = ptInstance.getPlayer();
+        if (!vjsPlayer) {
+            document.getElementById('stats').innerText = '❌ PeerTube 播放器创建失败，请切换其他引擎';
+            return;
+        }
+
+        playerInstances.peertube = { ptPlayer: ptInstance, vjsPlayer: vjsPlayer, video: videoEl };
+        activeVideoElement = videoEl;
+        // activeHlsInstance 将在 hlsjs-initialized 事件中设置
+
+        setupProgressForVideo(videoEl);
+
+        window._videoPlayer = {
+            seek: (t) => {
+                try { vjsPlayer.currentTime(t); vjsPlayer.play(); } catch(e) {}
+            }
+        };
+
+        // 确保 video 元素可见
+        function ensureReady() {
+            if (!vjsPlayer) return;
+            try {
+                var el = vjsPlayer.el();
+                var tech = el.querySelector('.vjs-tech');
+                if (tech) { tech.classList.remove('vjs-hidden'); tech.style.display = 'block'; }
+                el.classList.remove('vjs-audio-poster-mode');
+            } catch(e) {}
+        }
+        if (typeof vjsPlayer.audioPosterMode === 'function') vjsPlayer.audioPosterMode(false);
+        ensureReady();
+        ['loadedmetadata','loadeddata','canplay','play','playing','playerresize','resize'].forEach(function(ev) {
+            vjsPlayer.on(ev, ensureReady);
+        });
+        setTimeout(ensureReady, 50);
+        setTimeout(ensureReady, 300);
+        setTimeout(ensureReady, 1000);
+
+        // 如果 hlsjs-initialized 还没触发（可能因为是 web-video 模式），也尝试直接获取
+        setTimeout(function() {
+            if (!activeHlsInstance && vjsPlayer) {
+                try {
+                    // 尝试从 tech 上获取 HLS 实例
+                    var tech = vjsPlayer.tech({ IWillNotUseThisInPlugins: true });
+                    if (tech && tech.hls) {
+                        activeHlsInstance = tech.hls;
+                        setupQualityUI(tech.hls);
+                    }
+                } catch(e) {}
+            }
+        }, 1500);
+
+        // 错误处理
+        vjsPlayer.on('error', function() {
+            var err = vjsPlayer.error();
+            if (err) {
+                console.error('[PeerTube] 播放器错误:', err);
+            }
+        });
+
+        // 播放事件
+        vjsPlayer.on('playing', () => updateStats());
+        vjsPlayer.on('timeupdate', () => updateStats());
+        vjsPlayer.on('loadedmetadata', () => { updateStats(); ensureReady(); });
+        vjsPlayer.on('canplay', () => updateStats());
+        vjsPlayer.on('waiting', () => updateStats());
+
+        // PeerTube P2P stats 更新：优先事件监听，轮询兜底
+        _p2pAttached = false;
+        let peertubeStatsTimer = setInterval(() => {
+            if (!vjsPlayer) return;
+            try {
+                const tech = vjsPlayer.tech({ IWillNotUseThisInPlugins: true });
+                if (tech && tech.hls) {
+                    if (!activeHlsInstance) {
+                        activeHlsInstance = tech.hls;
+                        setupQualityUI(tech.hls);
+                    }
+                    // 尝试附加外置 P2P 引擎（如果还没附加的话）
+                    attachP2PEngineToHls(tech.hls);
+                }
+            } catch(e) {}
+            updateStats();
+        }, 2000);
+
+        // 保存定时器引用，用于销毁时清理
+        playerInstances.peertube._statsTimer = peertubeStatsTimer;
+
+        // 播放进度
+        const savedProgress = getPlayProgress(videoId);
+        let startAt = DEFAULT_SKIP_SECONDS;
+        if (resumeTime > 0) startAt = resumeTime;
+        else if (savedProgress && savedProgress.currentTime > DEFAULT_SKIP_SECONDS + 5) startAt = savedProgress.currentTime;
+        if (startAt > 0) {
+            vjsPlayer.on('loadedmetadata', function() {
+                try { vjsPlayer.currentTime(startAt); } catch(e) {}
+                if (savedProgress && !resumeTime && savedProgress.currentTime > DEFAULT_SKIP_SECONDS + 5) setTimeout(() => showProgressTip(savedProgress), 800);
+            });
+        } else if (savedProgress && savedProgress.currentTime > DEFAULT_SKIP_SECONDS + 5 && !resumeTime) {
+            setTimeout(() => showProgressTip(savedProgress), 1500);
+        }
+
+        updateStats();
+    }
+
+    // ── 引擎切换 ──
+    async function switchEngine(engine) {
+        let resumeTime = 0, wasPaused = true;
+        if (activeVideoElement) {
+            resumeTime = activeVideoElement.currentTime || 0;
+            wasPaused = activeVideoElement.paused;
+        }
+        resetStats();
+        destroyAllPlayers();
+        currentEngine = engine;
+        try { localStorage.setItem('preferred_player_engine', engine); } catch(e) {}
+        document.querySelectorAll('.engine-btn').forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.engine === engine);
+        });
+        showContainer(engine);
+
+        switch(engine) {
+            case 'dplayer': initDPlayer(resumeTime); break;
+            case 'hls': initHlsPlayer(resumeTime); break;
+            case 'plyr': initPlyrPlayer(resumeTime); break;
+            case 'peertube': await initPeerTubePlayer(resumeTime); break;
+        }
+
+        setTimeout(() => {
+            if (activeVideoElement && resumeTime > 3 && engine !== 'peertube') {
+                try {
+                    activeVideoElement.currentTime = resumeTime;
+                    if (!wasPaused) activeVideoElement.play().catch(() => {});
+                } catch(e) {}
+            }
+        }, 600);
+    }
+
+    // ── 引擎按钮绑定 ──
+    document.querySelectorAll('.engine-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const eng = btn.dataset.engine;
+            if (eng && eng !== currentEngine) switchEngine(eng);
+        });
+    });
+
+    // ── 多线路下拉 ──
+    function initLineDropdown() {
+        const dropdown = document.getElementById('lineDropdown');
+        const toggle = document.getElementById('lineToggle');
+        const menu = document.getElementById('lineMenu');
+        if (!dropdown || !toggle || !menu || allLines.length < 2) {
+            if (dropdown) dropdown.style.display = 'none';
+            return;
+        }
+
+        dropdown.style.display = '';
+        toggle.textContent = '线路' + (currentLineIndex + 1);
+        menu.innerHTML = '';
+        allLines.forEach((line, i) => {
+            const item = document.createElement('button');
+            item.className = 'quality-item' + (i === currentLineIndex ? ' active' : '');
+            item.textContent = '线路' + (i + 1) + ' (检测中...)';
+            item.addEventListener('click', () => switchLine(i));
+            menu.appendChild(item);
+        });
+
+        toggle.addEventListener('click', (e) => {
+            e.stopPropagation();
+            document.querySelectorAll('.quality-menu').forEach(m => {
+                if (m !== menu) m.style.display = 'none';
+            });
+            menu.style.display = menu.style.display === 'block' ? 'none' : 'block';
+        });
+        document.addEventListener('click', () => { menu.style.display = 'none'; });
+    }
+    initLineDropdown();
+
+    function switchLine(index) {
+        if (index < 0 || index >= allLines.length || index === currentLineIndex) return;
+        currentLineIndex = index;
+        currentUrl = allLines[index].url;
+        window.DLNA_SOURCE_URL = currentUrl;
+
+        renderLineMenu();
+
+        switchEngine(currentEngine);
+    }
+
+    // ── 外部 postMessage 监听（支持 iframe 嵌入时切换线路） ──
+    window.addEventListener('message', (e) => {
+        if (e.data && e.data.action === 'switchLine' && typeof e.data.index === 'number') {
+            switchLine(e.data.index);
+        }
+    });
+
+    // ── DLNA 投屏按钮 ──
+    const dlnaBtn = document.getElementById('dlnaCastBtn');
+    if (dlnaBtn) {
+        dlnaBtn.addEventListener('click', () => {
+            if (!window.DLNACast) return;
+            if (DLNACast.isCasting && DLNACast.isCasting()) {
+                DLNACast.stopCast();
+            } else {
+                DLNACast.open(currentUrl, videoTitle);
+            }
+        });
+        if (window.DLNACast && DLNACast.onStatusChange) {
+            DLNACast.onStatusChange((status) => {
+                if (status.connected) {
+                    dlnaBtn.classList.add('dlna-cast-stop-btn');
+                    dlnaBtn.textContent = '⏹️';
+                    dlnaBtn.title = '停止投屏';
+                } else {
+                    dlnaBtn.classList.remove('dlna-cast-stop-btn');
+                    dlnaBtn.textContent = '📺';
+                    dlnaBtn.title = '投屏 (DLNA)｜仅局域网智能电视 / 盒子支持';
+                }
+            });
+        }
+    }
+
+    window.openDLNACast = function() {
+        if (window.DLNACast) window.DLNACast.open(currentUrl, videoTitle);
+    };
+
+    window.addEventListener('beforeunload', () => {
+        if (activeVideoElement && !activeVideoElement.ended) {
+            savePlayProgress(videoId, activeVideoElement.currentTime, activeVideoElement.duration);
+        }
+    });
+
+    setInterval(() => {
+        if (stats.peers.size > 0 || stats.p2pDownloaded > 0 || stats.p2pUploaded > 0) {
+            updateStats();
+        }
+    }, 3000);
+
+    setupNetworkMonitoring();
+
+    // ── engine-switcher + stats 自动隐藏（桌面 20s 无操作淡出；移动端不自动隐藏） ──
+    (function initAutoHideChrome() {
+        const switcher = document.getElementById('engineSwitcher');
+        const statsEl = document.getElementById('stats');
+        const isMobile = ('ontouchstart' in window && navigator.maxTouchPoints > 1)
+            || window.matchMedia('(max-width:640px)').matches;
+        const HIDE_DELAY = isMobile ? 15000 : 20000;
+        let hideTimer = null;
+        let userInteracting = false;
+
+        function showChrome() {
+            if (switcher) switcher.classList.remove('engine-hidden');
+            if (statsEl) statsEl.classList.remove('engine-hidden');
+        }
+        function hideChrome() {
+            if (switcher) switcher.classList.add('engine-hidden');
+            if (statsEl) statsEl.classList.add('engine-hidden');
+        }
+        function scheduleHide() {
+            if (hideTimer) clearTimeout(hideTimer);
+            // 移动端不自动隐藏引擎栏，防止用户无法切换引擎/线路/P2P
+            if (isMobile) return;
+            // 全屏模式下不自动隐藏，确保退出按钮始终可操作
+            if (document.fullscreenElement || document.webkitFullscreenElement) return;
+            hideTimer = setTimeout(() => {
+                if (!userInteracting) hideChrome();
+            }, HIDE_DELAY);
+        }
+        function onActivity() {
+            showChrome();
+            scheduleHide();
+        }
+
+        if (switcher) {
+            switcher.addEventListener('mouseenter', () => {
+                userInteracting = true;
+                showChrome();
+                if (hideTimer) clearTimeout(hideTimer);
+            });
+            switcher.addEventListener('mouseleave', () => {
+                userInteracting = false;
+                scheduleHide();
+            });
+        }
+
+        let lastActivity = 0;
+        window.addEventListener('mousemove', (e) => {
+            const now = Date.now();
+            if (now - lastActivity < 100) return;
+            lastActivity = now;
+            const overSwitcher = switcher && switcher.matches(':hover');
+            if (overSwitcher) return;
+            onActivity();
+        }, { passive: true });
+        window.addEventListener('mousedown', onActivity, { passive: true });
+        window.addEventListener('touchstart', onActivity, { passive: true });
+        window.addEventListener('touchmove', onActivity, { passive: true });
+        window.addEventListener('keydown', onActivity, { passive: true });
+
+        scheduleHide();
+
+        var fsBtn = document.getElementById('mobileFsBtn');
+        var wrap = document.getElementById('playerWrap');
+        if (fsBtn && wrap) {
+            function toggleFullscreen() {
+                var isFullscreen = !!(document.fullscreenElement || document.webkitFullscreenElement);
+                if (isFullscreen) {
+                    // ── 退出全屏 ──
+                    if (document.exitFullscreen) {
+                        document.exitFullscreen();
+                    } else if (document.webkitExitFullscreen) {
+                        document.webkitExitFullscreen();
+                    }
+                } else {
+                    // ── 进入全屏 ──
+                    // iOS Safari: 仅 <video> 支持 webkitEnterFullscreen，<div> 无效
+                    if (/iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream) {
+                        var videoEl = getActiveVideoEl();
+                        if (videoEl && videoEl.webkitEnterFullscreen) {
+                            videoEl.webkitEnterFullscreen();
+                            return;
+                        }
+                    }
+                    // 标准 Fullscreen API/Android Chrome
+                    if (wrap.requestFullscreen) {
+                        wrap.requestFullscreen();
+                    } else if (wrap.webkitRequestFullscreen) {
+                        wrap.webkitRequestFullscreen();
+                    }
+                }
+            }
+            fsBtn.addEventListener('click', toggleFullscreen);
+
+            // 全屏状态变化时更新按钮图标
+            function onFsChange() {
+                var isFullscreen = !!(document.fullscreenElement || document.webkitFullscreenElement);
+                fsBtn.textContent = isFullscreen ? '✕' : '⛶';
+                fsBtn.title = isFullscreen ? '退出全屏' : '全屏';
+                onActivity(); // 全屏切换时重置 chrome 隐藏计时
+            }
+            document.addEventListener('fullscreenchange', onFsChange);
+            document.addEventListener('webkitfullscreenchange', onFsChange);
+        }
+    })();
+
+    // ── 启动 ──
+    (async () => {
+        if (allLines.length > 1) {
+            try { await smartDetectLines({ autoSwitch: true, overallTimeout: 1500, perLineTimeout: 1200 }); } catch(e) {}
+            setTimeout(async () => {
+                try { await smartDetectLines({ autoSwitch: false, overallTimeout: 3000, perLineTimeout: 2500 }); } catch(e) {}
+            }, 2000);
+        }
+
+        if (isMobile) {
+            // 移动端使用简单原生播放器
+            const container = document.getElementById('dplayer');
+            container.innerHTML = '';
+            container.classList.add('active');
+            document.getElementById('hls-container').classList.remove('active');
+            document.getElementById('plyr-container').classList.remove('active');
+            document.getElementById('peertube-container').classList.remove('active');
+
+            const videoType = currentUrl.includes('.m3u8') ? 'application/vnd.apple.mpegurl' : 'video/mp4';
+            let vh = `<video id="mobileVideo" controls playsinline webkit-playsinline muted width="100%" height="100%" poster="${pic}">`;
+            vh += `<source src="${currentUrl}" type="${videoType}">`;
+            vh += '</video>';
+            container.innerHTML = vh;
+
+            let statusText = '📱 移动设备';
+            if (currentNetworkInfo.isWiFi) statusText += ' | 📶 WiFi';
+            else if (currentNetworkInfo.isCellular) statusText += ' | 📱 移动数据';
+            statusText += ' | 原生播放器';
+            document.getElementById('stats').innerText = statusText;
+
+            setTimeout(() => {
+                const mv = document.getElementById('mobileVideo');
+                if (mv) {
+                    activeVideoElement = mv;
+                    activeHlsInstance = null;
+                    window._videoPlayer = {
+                        seek: (t) => { mv.currentTime = t; mv.play(); }
+                    };
+
+                    const savedProgress = getPlayProgress(videoId);
+                    let startAt = DEFAULT_SKIP_SECONDS;
+                    if (savedProgress && savedProgress.currentTime > DEFAULT_SKIP_SECONDS + 5) {
+                        startAt = savedProgress.currentTime;
+                    }
+
+                    if (startAt > 0) {
+                        mv.addEventListener('loadedmetadata', () => {
+                            mv.currentTime = startAt;
+                            if (savedProgress && startAt === savedProgress.currentTime) {
+                                setTimeout(() => showProgressTip(savedProgress), 800);
+                            }
+                        }, { once: true });
+                    } else if (savedProgress && savedProgress.currentTime > 5) {
+                        setTimeout(() => showProgressTip(savedProgress), 1000);
+                    }
+
+                    setupProgressForVideo(mv);
+
+                    let playStarted = false;
+                    mv.addEventListener('playing', () => {
+                        playStarted = true;
+                        updateMobileStats();
+                    });
+                    mv.addEventListener('volumechange', () => {
+                        updateMobileStats();
+                    });
+                    mv.addEventListener('pause', () => {
+                        updateMobileStats();
+                    });
+
+                    function updateMobileStats() {
+                        let st = '📱 移动设备';
+                        if (currentNetworkInfo.isWiFi) st += ' | 📶 WiFi';
+                        else if (currentNetworkInfo.isCellular) st += ' | 📱 移动数据';
+                        if (!mv.paused) st += ' | ▶️ 播放中';
+                        else st += ' | ⏸️ 暂停';
+                        if (mv.muted) st += ' | 🔇 静音(点击开启)';
+                        else st += ' | 🔊 有声';
+                        document.getElementById('stats').innerText = st;
+                    }
+
+                    // 移动端：静音自动播放（浏览器策略要求）
+                    mv.muted = true;
+                    const playPromise = mv.play();
+                    if (playPromise !== undefined) {
+                        playPromise.then(() => {
+                            playStarted = true;
+                            updateMobileStats();
+                        }).catch(() => {
+                            // 自动播放失败，等待用户点击
+                            document.getElementById('stats').innerText = '👆 点击视频开始播放';
+                        });
+                    }
+
+                    // 用户第一次交互时取消静音
+                    const unmuteOnFirstInteraction = () => {
+                        if (mv.muted) {
+                            mv.muted = false;
+                            mv.volume = 1;
+                            updateMobileStats();
+                        }
+                        mv.removeEventListener('click', unmuteOnFirstInteraction);
+                        mv.removeEventListener('touchstart', unmuteOnFirstInteraction);
+                    };
+                    mv.addEventListener('click', unmuteOnFirstInteraction);
+                    mv.addEventListener('touchstart', unmuteOnFirstInteraction);
+                }
+            }, 300);
+            return;
+        }
+
+        updateStats();
+
+        // 预加载 P2P 引擎
+        if (ENABLE_P2P) {
+            try {
+                if (window.HlsJsP2PEngine) {
+                    HlsJsP2PEngine = window.HlsJsP2PEngine;
+                } else {
+                    const p2pEngineUrl = BASE_PATH + 'js/hlsjs.es.min.js';
+                    const mod = await import(p2pEngineUrl);
+                    HlsJsP2PEngine = mod.HlsJsP2PEngine || mod.default || mod;
+                    if (!HlsJsP2PEngine || !HlsJsP2PEngine.injectMixin) {
+                        // 尝试用 importShim
+                        if (window.importShim) {
+                            try {
+                                const mod2 = await window.importShim(p2pEngineUrl);
+                                HlsJsP2PEngine = mod2.HlsJsP2PEngine || mod2.default || mod2;
+                            } catch(ie) {}
+                        }
+                    }
+                }
+            } catch(e) {
+                console.warn('P2P 引擎加载失败:', e);
+                HlsJsP2PEngine = null;
+                ENABLE_P2P = false;
+                updateP2PToggleUI();
+            }
+        }
+
+        // 预加载 PeerTube 模块
+        try {
+            const ptBase = BASE_URL + 'js/peertube/';
+            const cacheBust = '?v=' + Date.now();
+            peertubeModule = await import(/* @vite-ignore */ ptBase + 'peertube-player.js' + cacheBust);
+        } catch(e) {
+            console.warn('PeerTube 模块预加载失败:', e);
+        }
+
+        await switchEngine(currentEngine);
+    })();
+    </script>
+</body>
+</html>
