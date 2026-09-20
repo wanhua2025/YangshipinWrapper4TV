@@ -705,13 +705,14 @@ $sql = "CREATE TABLE `{$DP}live` (
 			$.getJSON(ruyiApiUrl + '&action=list', function(res) {
 				var tbody = $('#sourcesTableBody');
 				tbody.empty();
-				if (!res.sources || res.sources.length === 0) {
+				var sources = res.data && res.data.sources ? res.data.sources : (res.sources || []);
+				if (!sources || sources.length === 0) {
 					tbody.html('<tr><td colspan="6" class="text-center text-muted py-3">暂无订阅源，请先添加</td></tr>');
 					return;
 				}
 				var typeLabel = { remote: '<span class="badge badge-info">远程URL</span>', local: '<span class="badge badge-warning">本地文件</span>' };
 				var stateLabel = { enabled: '<span class="badge badge-success">启用</span>', disabled: '<span class="badge badge-secondary">停用</span>' };
-				res.sources.forEach(function(s) {
+				sources.forEach(function(s) {
 					var urlOrFile = s.type === 'remote' ? s.url : s.file;
 					var shortUrl = urlOrFile.length > 45 ? urlOrFile.substring(0, 45) + '...' : urlOrFile;
 					var row = '<tr data-id="' + s.id + '">' +
@@ -821,8 +822,9 @@ $sql = "CREATE TABLE `{$DP}live` (
 				var box = $('#sourceStatusBox');
 				box.removeClass('alert alert-success alert-danger');
 				if (res.code === 200) {
-					box.addClass('alert alert-success').html('<i class="mdi mdi-check-circle mr-1"></i><b>同步完成！</b> 合并 ' + (res.channels_count || 0) + ' 个频道，' + (res.sources_count || 0) + ' 条线路。');
-					t.NotificationApp.send('成功', '同步完成：' + (res.channels_count || 0) + ' 个频道', 'top-center', 'rgba(0,0,0,0.2)', 'success');
+					var dat = res.data || {};
+					box.addClass('alert alert-success').html('<i class="mdi mdi-check-circle mr-1"></i><b>同步完成！</b> 合并 ' + (dat.channels_count || 0) + ' 个频道，' + (dat.sources_count || 0) + ' 条线路。');
+					t.NotificationApp.send('成功', '同步完成：' + (dat.channels_count || 0) + ' 个频道', 'top-center', 'rgba(0,0,0,0.2)', 'success');
 					loadSourcesList();
 				} else {
 					box.addClass('alert alert-danger').html('<i class="mdi mdi-alert mr-1"></i><b>同步失败：</b> ' + (res.msg || '未知错误'));
