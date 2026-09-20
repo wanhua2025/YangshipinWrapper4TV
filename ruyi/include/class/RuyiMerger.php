@@ -1,6 +1,11 @@
 <?php
 class RuyiMerger {
 
+    public static function basePath() {
+        if (defined('FCPATH')) return FCPATH;
+        return str_replace('\\', '/', dirname(dirname(__DIR__))) . '/';
+    }
+
     public static function fetchSource($url, $timeout = 10) {
         $ch = curl_init();
         curl_setopt($ch, CURLOPT_URL, $url);
@@ -28,9 +33,9 @@ class RuyiMerger {
                 $result = self::fetchSource($source['url']);
                 if (!$result['ok']) continue;
                 $content = $result['content'];
-                file_put_contents(FCPATH . 'feeds/' . $source['id'] . '.txt', $content);
+                @file_put_contents(self::basePath() . 'feeds/' . $source['id'] . '.txt', $content);
             } elseif ($source['type'] === 'local') {
-                $path = FCPATH . 'imports/' . $source['file'];
+                $path = self::basePath() . 'imports/' . $source['file'];
                 if (!file_exists($path)) continue;
                 $content = file_get_contents($path);
             }
@@ -67,11 +72,14 @@ class RuyiMerger {
             }
         }
         if ($epgUrl !== '') {
-            file_put_contents(FCPATH . 'ruyi.json', json_encode([
-                'epg_url' => $epgUrl,
-                'channels_count' => count($merged),
-                'generated_at' => time(),
-            ], JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT));
+            $cfgPath = self::basePath() . 'ruyi.json';
+            $cfg = [];
+            if (file_exists($cfgPath)) {
+                $d = json_decode(file_get_contents($cfgPath), true);
+                if (is_array($d)) $cfg = $d;
+            }
+            $cfg['epg_url'] = $epgUrl;
+            file_put_contents($cfgPath, json_encode($cfg, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT));
         }
         return ['merged' => $merged, 'epg_url' => $epgUrl];
     }
@@ -132,6 +140,7 @@ class RuyiMerger {
 
     public static function writeAll($channelList, $epgUrl, $sources) {
         self::ensureDirs();
+        $base = self::basePath();
         $json = [
             'version' => '1.0',
             'generated_at' => time(),
@@ -139,28 +148,29 @@ class RuyiMerger {
             'channels' => $channelList,
             'sources_config' => $sources,
         ];
-        file_put_contents(FCPATH . 'channel.json', json_encode($json, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT));
-        file_put_contents(FCPATH . 'interface.m3u', self::buildM3U($channelList, $epgUrl));
-        file_put_contents(FCPATH . 'txt', self::buildTXT($channelList));
+        file_put_contents($base . 'channel.json', json_encode($json, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT));
+        file_put_contents($base . 'interface.m3u', self::buildM3U($channelList, $epgUrl));
+        file_put_contents($base . 'txt', self::buildTXT($channelList));
         self::updateRuyiJsonMeta($epgUrl, count($channelList));
     }
 
     public static function ensureDirs() {
-        if (!is_dir(FCPATH . 'feeds')) @mkdir(FCPATH . 'feeds', 0755, true);
-        if (!is_dir(FCPATH . 'imports')) @mkdir(FCPATH . 'imports', 0755, true);
-        if (!is_dir(FCPATH . 'feeds/.htaccess')) file_put_contents(FCPATH . 'feeds/.htaccess', "Deny from all");
-        if (!is_dir(FCPATH . 'imports/.htaccess')) file_put_contents(FCPATH . 'imports/.htaccess', "Deny from all");
+        $base = self::basePath();
+        if (!is_dir($base . 'feeds')) @mkdir($base . 'feeds', 0755, true);
+        if (!is_dir($base . 'imports')) @mkdir($base . 'imports', 0755, true);
     }
 
     public static function updateRuyiJsonMeta($epgUrl, $count) {
+        $base = self::basePath();
         $cfg = [];
-        if (file_exists(FCPATH . 'ruyi.json')) {
-            $decoded = json_decode(file_get_contents(FCPATH . 'ruyi.json'), true);
+        $path = $base . 'ruyi.json';
+        if (file_exists($path)) {
+            $decoded = json_decode(file_get_contents($path), true);
             if (is_array($decoded)) $cfg = $decoded;
         }
         $cfg['epg_url'] = $epgUrl;
         $cfg['channels_count'] = $count;
         $cfg['generated_at'] = time();
-        file_put_contents(FCPATH . 'ruyi.json', json_encode($cfg, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT));
+        file_put_contents($path, json_encode($cfg, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT));
     }
 }
