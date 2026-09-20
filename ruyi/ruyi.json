@@ -1,0 +1,31 @@
+{
+  "version": "1.0",
+  "epg_url": "http://124.223.198.234:1905/playback.xml",
+  "channels_count": 0,
+  "generated_at": 0,
+  "sources": [
+    {
+      "id": "ysp_interface",
+      "name": "央视影音接口",
+      "type": "remote",
+      "format": "m3u",
+      "url": "http://124.223.198.234:1905/interface.m3u",
+      "enabled": true,
+      "priority": 1
+    },
+    {
+      "id": "ysp_txt",
+      "name": "央视影音TXT",
+      "type": "remote",
+      "format": "txt",
+      "url": "http://124.223.198.234:1905/txt",
+      "enabled": true,
+      "priority": 2
+    }
+  ],
+  "settings": {
+    "auto_switch": true,
+    "max_sources_per_channel": 5,
+    "connect_timeout": 8
+  }
+}
