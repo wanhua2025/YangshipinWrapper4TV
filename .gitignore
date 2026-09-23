@@ -29,3 +29,13 @@ _debug_*
 screenshot.png
 .vscode/
 AGENTS.md
+*.so
+*.dll
+*.exe
+*.jar
+*.zip
+*.ttf
+jadx/
+.apktool/
+ruyi/ruyi.zip
+ruyi/msyhbd.ttf

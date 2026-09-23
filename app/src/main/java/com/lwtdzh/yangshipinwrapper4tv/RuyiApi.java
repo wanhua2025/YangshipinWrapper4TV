@@ -508,14 +508,30 @@ public class RuyiApi {
     }
 
     public static int compareVersion(String v1, String v2) {
+        if (v1 == null || v1.length() == 0) return -1;
+        if (v2 == null || v2.length() == 0) return 1;
         String[] p1 = v1.split("\\.");
         String[] p2 = v2.split("\\.");
         int len = Math.max(p1.length, p2.length);
         for (int i = 0; i < len; i++) {
-            int n1 = i < p1.length ? Integer.parseInt(p1[i].trim()) : 0;
-            int n2 = i < p2.length ? Integer.parseInt(p2[i].trim()) : 0;
-            if (n1 != n2) return n1 - n2;
+            int n1 = 0, n2 = 0;
+            try {
+                if (i < p1.length && p1[i] != null) n1 = Integer.parseInt(p1[i].trim());
+            } catch (NumberFormatException e) {
+                Log.w(TAG, "compareVersion parse v1 part[" + i + "]=" + p1[i]);
+            }
+            try {
+                if (i < p2.length && p2[i] != null) n2 = Integer.parseInt(p2[i].trim());
+            } catch (NumberFormatException e) {
+                Log.w(TAG, "compareVersion parse v2 part[" + i + "]=" + p2[i]);
+            }
+            if (n1 != n2) {
+                int diff = n1 - n2;
+                Log.i(TAG, "compareVersion step[" + i + "] v1=" + v1 + "(p1=" + n1 + ") vs v2=" + v2 + "(p2=" + n2 + ") diff=" + diff);
+                return diff;
+            }
         }
+        Log.i(TAG, "compareVersion equal v1=" + v1 + " v2=" + v2);
         return 0;
     }
 

@@ -1,0 +1,77 @@
+=== Device Info ===
+Manufacturer: OnePlus
+Model: HD1910
+Android: 5.1.1 SDK 22
+App Version: 2.02
+Device ID: tv_01c77e3d7fe14962
+AutoStartEnabled: true
+
+=== Logcat (last 300 lines) ===
+--------- beginning of main
+09-22 23:30:21.326 31934 31982 W YSPTV   : line_bad_http code=502 url=https://vip.ffzy-play7.com/20230116/11563_b9f44814/index.m3u8
+09-22 23:30:21.504 31934 31981 W YSPTV   : line_bad_http code=404 url=https://live.metshop.top/huya/29465859
+09-22 23:30:21.845 31934 31978 W YSPTV   : line_bad_http code=404 url=https://live.metshop.top/huya/11601986
+09-22 23:30:21.904 31934 31977 W YSPTV   : line_bad_http code=404 url=https://live.metshop.top/huya/21059585
+09-22 23:30:21.962 31934 31971 W YSPTV   : line_bad_net err=SocketTimeoutException url=http://222.179.42.129:8181/hls1.m3u8
+09-22 23:30:22.018 31934 31982 W YSPTV   : line_bad_http code=404 url=https://live.metshop.top/huya/23863796
+09-22 23:30:22.496 31934 31977 W YSPTV   : line_bad_http code=404 url=https://live.metshop.top/huya/29465857
+09-22 23:30:22.706 31934 31976 W YSPTV   : line_bad_http code=404 url=https://live.metshop.top/huya/23903183
+09-22 23:30:22.865 31934 31974 W YSPTV   : line_bad_net err=SSLHandshakeException url=https://video.bread-tv.com:8091/hls-live24/online/index.m3u8
+09-22 23:30:23.059 31934 31988 W YSPTV   : line_bad_http code=404 url=https://live.metshop.top/huya/29465847
+09-22 23:30:23.558 31934 31986 W YSPTV   : line_bad_http code=404 url=https://live.metshop.top/huya/11342435
+09-22 23:30:23.817 31934 31975 W YSPTV   : line_bad_net err=SocketTimeoutException url=https://amg00353-lionsgatefilmsi-moviesphereaus-samsungau-7q
+09-22 23:30:24.726 31934 31974 W YSPTV   : line_bad_http code=404 url=https://live.metshop.top/huya/11352876
+09-22 23:30:26.302 31934 31983 W YSPTV   : line_bad_net err=SocketTimeoutException url=https://amg01074-fueltv-fueltvemeaen-rakuten-b6j62.amagi.tv/
+09-22 23:30:26.642 31934 31979 W YSPTV   : line_bad_net err=SocketTimeoutException url=https://d3k8wzt41aflvx.cloudfront.net/RAIHD/Live.m3u8
+09-22 23:30:26.647 31934 31985 W YSPTV   : line_bad_net err=SocketTimeoutException url=https://d3k8wzt41aflvx.cloudfront.net/RAIP/Live.m3u8
+09-22 23:30:34.662 31934 31984 W YSPTV   : line_bad_net err=SocketTimeoutException url=https://cdn-uw2-prod.tsv2.amagi.tv/linear/amg01438-ewscripps
+09-22 23:30:34.663 31934 31970 I YSPTV   : channel_detect done bad_channels=95 total_channels=980
+09-22 23:30:47.023 31934 31934 I YSPTV   : select_play channel=中学生 absIdx=158
+09-22 23:30:47.023 31934 31934 I YSPTV   : exo_play index=158 name=中学生 line=1/1 lat=31ms url=http://124.223.198.234:1905/708869532
+09-22 23:30:47.023 31934 31934 I YSPTV   : exo_source=hls url=http://124.223.198.234:1905/708869532
+09-22 23:30:47.023 31934 31934 I YSPTV   : exo_state_changed state=2
+09-22 23:30:47.574 31934 31934 I YSPTV   : exo_state_changed state=3
+09-22 23:30:52.986 31934 31934 I YSPTV   : ruyi_heartbeat_ok vip=999999999
+09-22 23:30:53.026 31934  3281 I YSPTV   : push_poll resp: {\&quot;code\&quot;:200\&quot;msg\&quot;:\&quot;ok\&quot;\&quot;time\&quot;:1790091052}
+09-22 23:31:52.962 31934 31934 I YSPTV   : ruyi_heartbeat_ok vip=999999999
+09-22 23:31:53.001 31934  6404 I YSPTV   : push_poll resp: {\&quot;code\&quot;:200\&quot;msg\&quot;:\&quot;ok\&quot;\&quot;time\&quot;:1790091112}
+09-22 23:32:52.969 31934 31934 I YSPTV   : ruyi_heartbeat_ok vip=999999999
+09-22 23:32:53.009 31934  9526 I YSPTV   : push_poll resp: {\&quot;code\&quot;:200\&quot;msg\&quot;:\&quot;ok\&quot;\&quot;time\&quot;:1790091172}
+09-22 23:33:52.968 31934 31934 I YSPTV   : ruyi_heartbeat_ok vip=999999999
+09-22 23:33:53.006 31934 12648 I YSPTV   : push_poll resp: {\&quot;code\&quot;:200\&quot;msg\&quot;:\&quot;ok\&quot;\&quot;time\&quot;:1790091232}
+09-22 23:34:52.970 31934 31934 I YSPTV   : ruyi_heartbeat_ok vip=999999999
+09-22 23:34:53.009 31934 15769 I YSPTV   : push_poll resp: {\&quot;code\&quot;:200\&quot;msg\&quot;:\&quot;ok\&quot;\&quot;time\&quot;:1790091292}
+09-22 23:35:52.970 31934 31934 I YSPTV   : ruyi_heartbeat_ok vip=999999999
+09-22 23:35:53.009 31934 18891 I YSPTV   : push_poll resp: {\&quot;code\&quot;:200\&quot;msg\&quot;:\&quot;ok\&quot;\&quot;time\&quot;:1790091352}
+09-22 23:36:52.972 31934 31934 I YSPTV   : ruyi_heartbeat_ok vip=999999999
+09-22 23:36:53.011 31934 22012 I YSPTV   : push_poll resp: {\&quot;code\&quot;:200\&quot;msg\&quot;:\&quot;ok\&quot;\&quot;time\&quot;:1790091412}
+09-22 23:37:52.977 31934 31934 I YSPTV   : ruyi_heartbeat_ok vip=999999999
+09-22 23:37:53.012 31934 25134 I YSPTV   : push_poll resp: {\&quot;code\&quot;:200\&quot;msg\&quot;:\&quot;ok\&quot;\&quot;time\&quot;:1790091472}
+09-22 23:38:52.977 31934 31934 I YSPTV   : ruyi_heartbeat_ok vip=999999999
+09-22 23:38:53.016 31934 28254 I YSPTV   : push_poll resp: {\&quot;code\&quot;:200\&quot;msg\&quot;:\&quot;ok\&quot;\&quot;time\&quot;:1790091532}
+09-22 23:39:52.980 31934 31934 I YSPTV   : ruyi_heartbeat_ok vip=999999999
+09-22 23:39:53.020 31934 31378 I YSPTV   : push_poll resp: {\&quot;code\&quot;:200\&quot;msg\&quot;:\&quot;ok\&quot;\&quot;time\&quot;:1790091592}
+09-22 23:40:52.978 31934 31934 I YSPTV   : ruyi_heartbeat_ok vip=999999999
+09-22 23:40:53.016 31934  2371 I YSPTV   : push_poll resp: {\&quot;code\&quot;:200\&quot;msg\&quot;:\&quot;ok\&quot;\&quot;time\&quot;:1790091652}
+09-22 23:41:52.978 31934 31934 I YSPTV   : ruyi_heartbeat_ok vip=999999999
+09-22 23:41:53.011 31934  5498 I YSPTV   : push_poll resp: {\&quot;code\&quot;:200\&quot;msg\&quot;:\&quot;ok\&quot;\&quot;time\&quot;:1790091712}
+09-22 23:42:52.987 31934 31934 I YSPTV   : ruyi_heartbeat_ok vip=999999999
+09-22 23:42:53.025 31934  8622 I YSPTV   : push_poll resp: {\&quot;code\&quot;:200\&quot;msg\&quot;:\&quot;ok\&quot;\&quot;time\&quot;:1790091772}
+09-22 23:43:52.997 31934 31934 I YSPTV   : ruyi_heartbeat_ok vip=999999999
+09-22 23:43:53.037 31934 11743 I YSPTV   : push_poll resp: {\&quot;code\&quot;:200\&quot;msg\&quot;:\&quot;ok\&quot;\&quot;time\&quot;:1790091832}
+09-22 23:44:53.004 31934 31934 I YSPTV   : ruyi_heartbeat_ok vip=999999999
+09-22 23:44:53.041 31934 14866 I YSPTV   : push_poll resp: {\&quot;code\&quot;:200\&quot;msg\&quot;:\&quot;ok\&quot;\&quot;time\&quot;:1790091892}
+09-22 23:45:53.008 31934 31934 I YSPTV   : ruyi_heartbeat_ok vip=999999999
+09-22 23:45:53.044 31934 17988 I YSPTV   : push_poll resp: {\&quot;code\&quot;:200\&quot;msg\&quot;:\&quot;ok\&quot;\&quot;time\&quot;:1790091952}
+09-22 23:46:53.010 31934 31934 I YSPTV   : ruyi_heartbeat_ok vip=999999999
+09-22 23:46:53.049 31934 21112 I YSPTV   : push_poll resp: {\&quot;code\&quot;:200\&quot;msg\&quot;:\&quot;ok\&quot;\&quot;time\&quot;:1790092012}
+09-22 23:47:53.012 31934 31934 I YSPTV   : ruyi_heartbeat_ok vip=999999999
+09-22 23:47:53.048 31934 24231 I YSPTV   : push_poll resp: {\&quot;code\&quot;:200\&quot;msg\&quot;:\&quot;ok\&quot;\&quot;time\&quot;:1790092072}
+09-22 23:48:53.013 31934 31934 I YSPTV   : ruyi_heartbeat_ok vip=999999999
+09-22 23:48:53.051 31934 27353 I YSPTV   : push_poll resp: {\&quot;code\&quot;:200\&quot;msg\&quot;:\&quot;ok\&quot;\&quot;time\&quot;:1790092132}
+09-22 23:49:01.824 31934 31934 I YSPTV   : select_play channel=中学生 absIdx=158
+09-22 23:49:01.825 31934 31934 I YSPTV   : exo_play index=158 name=中学生 line=1/1 lat=31ms url=http://124.223.198.234:1905/708869532
+09-22 23:49:01.825 31934 31934 I YSPTV   : exo_source=hls url=http://124.223.198.234:1905/708869532
+09-22 23:49:01.825 31934 31934 I YSPTV   : exo_state_changed state=2
+09-22 23:49:02.136 31934 31934 I YSPTV   : exo_state_changed state=3
+09-22 23:49:08.588 31934 31934 W InputEventReceiver: Attempted to finish an input event but the input event receiver has already been disposed.

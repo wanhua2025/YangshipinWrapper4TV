@@ -33,6 +33,7 @@ import android.view.ViewConfiguration;
 import android.view.ViewGroup;
 import android.view.Window;
 import android.view.WindowManager;
+import android.view.TextureView;
 import android.webkit.JavascriptInterface;
 import android.webkit.WebChromeClient;
 import android.webkit.WebSettings;
@@ -43,17 +44,28 @@ import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.ListView;
 import android.widget.ProgressBar;
+import android.widget.ScrollView;
 import android.widget.TextView;
 
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
 import androidx.core.content.FileProvider;
-import androidx.media3.common.MediaItem;
-import androidx.media3.common.PlaybackException;
-import androidx.media3.common.Player;
-import androidx.media3.exoplayer.ExoPlayer;
-import androidx.media3.ui.PlayerView;
+import com.google.android.exoplayer2.DefaultLoadControl;
+import com.google.android.exoplayer2.DefaultRenderersFactory;
+import com.google.android.exoplayer2.ExoPlayer;
+import com.google.android.exoplayer2.MediaItem;
+import com.google.android.exoplayer2.PlaybackException;
+import com.google.android.exoplayer2.Player;
+import com.google.android.exoplayer2.source.ProgressiveMediaSource;
+import com.google.android.exoplayer2.source.hls.HlsMediaSource;
+import com.google.android.exoplayer2.upstream.DefaultHttpDataSource;
+import xyz.doikki.videoplayer.exo.OkHttpDataSource;
+import com.google.android.exoplayer2.ui.PlayerView;
+import com.google.android.exoplayer2.video.VideoRendererEventListener;
+import com.google.android.exoplayer2.audio.AudioRendererEventListener;
+
+import okhttp3.OkHttpClient;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -88,9 +100,6 @@ import javax.net.ssl.SSLSession;
 import javax.net.ssl.SSLSocket;
 import javax.net.ssl.SSLSocketFactory;
 
-import androidx.media3.exoplayer.DefaultRenderersFactory;
-import androidx.media3.exoplayer.mediacodec.MediaCodecSelector;
-
 public class MainActivity extends Activity {
     private static final String TAG = "YSPTV";
     private static final String YSP_HOME_URL = "https://www.yangshipin.cn/tv/home";
@@ -99,6 +108,7 @@ public class MainActivity extends Activity {
     private static final String PREF_CHANNEL_PID = "channel_pid";
     private static final String PREF_PLAYBACK_MODE = "playback_mode";
     private static final String PREF_AUTO_START = "auto_start_on_boot";
+    private static final String PLAYBACK_MODE_AUTO = "auto";
     private static final String PLAYBACK_MODE_HW = "hw";
     private static final String PLAYBACK_MODE_SW = "sw";
     private static final String PLAYBACK_HELP_TEXT = "按上下键换台，按OK键打开频道列表，按右键切换线路";
@@ -111,7 +121,38 @@ public class MainActivity extends Activity {
     private static final int SETTINGS_IDX_AUTOSTART = 1;
 
     private final Handler handler = new Handler(Looper.getMainLooper());
+    private static boolean sVideoDecodeFailed = false;
     private static final long MENU_AUTO_HIDE_MS = 15000;
+    private static final long BLACK_SCREEN_CHECK_DELAY = 4000;
+    private boolean mVideoRendered = false;
+    private boolean mAudioRendered = false;
+    private boolean mBlackscreenDetectInProgress = false;
+    private int mIjkPlayerRetryCount = 0;
+    private static final int MAX_IJK_RETRY = 2;
+    private final Runnable blackscreenCheckRunnable = new Runnable() {
+        @Override
+        public void run() {
+            if (mUseIjkPlayer) return;
+            if (mVideoRendered) {
+                Log.i(TAG, "blackscreen_check_passed video_rendered_ok audio_optional");
+                mBlackscreenDetectInProgress = false;
+                return;
+            }
+            if (!mAudioRendered) {
+                Log.i(TAG, "blackscreen_abort_no_audio_yet wait_more");
+                handler.postDelayed(this, 2000);
+                return;
+            }
+            if (!mVideoRendered) {
+                Log.w(TAG, "blackscreen_detected! audio_ok_but_no_video_switch_to_ijk");
+                mBlackscreenDetectInProgress = false;
+                switchPlayerToIjk();
+            } else {
+                Log.i(TAG, "blackscreen_check_passed video_rendered_ok");
+                mBlackscreenDetectInProgress = false;
+            }
+        }
+    };
     private final Runnable menuAutoHideRunnable = new Runnable() {
         @Override
         public void run() {
@@ -167,6 +208,9 @@ public class MainActivity extends Activity {
     private WebView bridgeWebView;
     private PlayerView playerView;
     private ExoPlayer exoPlayer;
+    private boolean mUseIjkPlayer = false;
+    private IjkPlayerHelper mIjkPlayer;
+    private TextureView mIjkTextureView;
     private FrameLayout loadingOverlay;
     private GestureTraceView gestureTraceView;
     private TextView overlayText;
@@ -175,6 +219,9 @@ public class MainActivity extends Activity {
     private TextView menuHeader;
     private RecyclerView groupRecyclerView;
     private RecyclerView channelRecyclerView;
+    // API 19 替代方案：使用 ScrollView + LinearLayout 替代 RecyclerView
+    private ViewGroup channelListContainer;
+    private LinearLayout channelListInnerLayout;
     private GroupAdapter groupAdapter;
     private ChannelItemAdapter channelItemAdapter;
     private final List<String> menuGroups = new ArrayList<>();
@@ -191,7 +238,7 @@ public class MainActivity extends Activity {
     private boolean autoStartOnBoot = true;
     private int bridgeAttempts = 0;
     private boolean channelsLoaded = false;
-    private String playbackMode = PLAYBACK_MODE_HW;
+    private String playbackMode = PLAYBACK_MODE_AUTO;
     private int touchSlop;
     private final StringBuilder numberBuffer = new StringBuilder();
     private RuyiApi ruyiApi;
@@ -212,7 +259,7 @@ public class MainActivity extends Activity {
                 bridgeWebView.loadUrl("about:blank");
             }
             if (exoPlayer != null) {
-                exoPlayer.stop();
+                stopPlayer();
             }
             if (overlayText != null) {
                 overlayText.setBackgroundColor(Color.parseColor("#CC000000"));
@@ -233,7 +280,7 @@ public class MainActivity extends Activity {
             if (bridgeWebView != null) {
                 bridgeWebView.loadUrl(YSP_HOME_URL);
             }
-            if (channelsLoaded && exoPlayer != null) {
+            if (channelsLoaded) {
                 playCurrentWithExo();
             }
             if (overlayText != null) {
@@ -300,10 +347,11 @@ public class MainActivity extends Activity {
         installTlsCompatIfNeeded();
         preferences = getSharedPreferences(PREFS, MODE_PRIVATE);
         touchSlop = ViewConfiguration.get(this).getScaledTouchSlop();
-        playbackMode = preferences.getString(PREF_PLAYBACK_MODE, PLAYBACK_MODE_HW);
-        if (!PLAYBACK_MODE_SW.equals(playbackMode)) {
+        playbackMode = preferences.getString(PREF_PLAYBACK_MODE, PLAYBACK_MODE_AUTO);
+        if (!PLAYBACK_MODE_SW.equals(playbackMode) && !PLAYBACK_MODE_AUTO.equals(playbackMode)) {
             playbackMode = PLAYBACK_MODE_HW;
         }
+        applyPlaybackModeToPlayerEngine();
         autoStartOnBoot = preferences.getBoolean(PREF_AUTO_START, true);
 
         buildUi();
@@ -412,19 +460,44 @@ public class MainActivity extends Activity {
         divider.setBackgroundColor(0x33FFFFFF);
         bodyLayout.addView(divider, divParams);
 
-        channelRecyclerView = new RecyclerView(this);
-        channelRecyclerView.setLayoutManager(new LinearLayoutManager(this, LinearLayoutManager.VERTICAL, false));
-        channelItemAdapter = new ChannelItemAdapter();
-        channelRecyclerView.setAdapter(channelItemAdapter);
-        channelRecyclerView.setFocusable(true);
-        channelRecyclerView.setDescendantFocusability(ViewGroup.FOCUS_AFTER_DESCENDANTS);
-        channelRecyclerView.setVerticalScrollBarEnabled(false);
-        LinearLayout.LayoutParams channelParams = new LinearLayout.LayoutParams(
-                0,
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                1);
-        channelParams.leftMargin = dp(8);
-        bodyLayout.addView(channelRecyclerView, channelParams);
+        if (Build.VERSION.SDK_INT < 20) {
+            // API 19: 使用 ScrollView + LinearLayout 替代 RecyclerView
+            ScrollView scrollView = new ScrollView(this);
+            scrollView.setVerticalScrollBarEnabled(false);
+            scrollView.setDescendantFocusability(ViewGroup.FOCUS_AFTER_DESCENDANTS);
+            LinearLayout ll = new LinearLayout(this);
+            ll.setOrientation(LinearLayout.VERTICAL);
+            ll.setDescendantFocusability(ViewGroup.FOCUS_AFTER_DESCENDANTS);
+            scrollView.addView(ll, new ScrollView.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT));
+            // 记录 channelListView 为 scrollView，channelInnerLayout 为 ll
+            // 注意：ViewGroup 类型的 channelListContainer 用于引用真正的容器
+            channelListContainer = scrollView;
+            channelListInnerLayout = ll;
+            channelItemAdapter = new ChannelItemAdapter();
+            LinearLayout.LayoutParams channelParams = new LinearLayout.LayoutParams(
+                    0,
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    1);
+            channelParams.leftMargin = dp(8);
+            bodyLayout.addView(scrollView, channelParams);
+        } else {
+            channelRecyclerView = new RecyclerView(this);
+            channelRecyclerView.setLayoutManager(new LinearLayoutManager(this, LinearLayoutManager.VERTICAL, false));
+            channelRecyclerView.setItemAnimator(null);
+            channelItemAdapter = new ChannelItemAdapter();
+            channelRecyclerView.setAdapter(channelItemAdapter);
+            channelRecyclerView.setFocusable(true);
+            channelRecyclerView.setDescendantFocusability(ViewGroup.FOCUS_AFTER_DESCENDANTS);
+            channelRecyclerView.setVerticalScrollBarEnabled(false);
+            LinearLayout.LayoutParams channelParams = new LinearLayout.LayoutParams(
+                    0,
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    1);
+            channelParams.leftMargin = dp(8);
+            bodyLayout.addView(channelRecyclerView, channelParams);
+        }
 
         groupRecyclerView.setOnTouchListener(new View.OnTouchListener() {
             @Override
@@ -435,7 +508,18 @@ public class MainActivity extends Activity {
                 return false;
             }
         });
-        channelRecyclerView.setOnTouchListener(new View.OnTouchListener() {
+        if (Build.VERSION.SDK_INT >= 20 && channelRecyclerView != null) {
+            channelRecyclerView.addOnScrollListener(new RecyclerView.OnScrollListener() {
+                @Override
+                public void onScrollStateChanged(RecyclerView recyclerView, int newState) {
+                    if (newState == RecyclerView.SCROLL_STATE_IDLE) {
+                        forceRebindAllVisibleItems();
+                    }
+                }
+            });
+        }
+        View channelTouchTarget = (Build.VERSION.SDK_INT < 20 && channelListContainer != null) ? channelListContainer : channelRecyclerView;
+        channelTouchTarget.setOnTouchListener(new View.OnTouchListener() {
             @Override
             public boolean onTouch(View v, android.view.MotionEvent event) {
                 if (menuPanel.getVisibility() == View.VISIBLE && event.getAction() == android.view.MotionEvent.ACTION_MOVE) {
@@ -498,26 +582,173 @@ public class MainActivity extends Activity {
     }
 
     private void initExoPlayer() {
-        playerView = new PlayerView(this);
-        playerView.setBackgroundColor(Color.BLACK);
-        playerView.setUseController(false);
-        playerView.setFocusable(false);
-
-        DefaultRenderersFactory renderersFactory = new DefaultRenderersFactory(this);
-        renderersFactory.setEnableDecoderFallback(true);
-        if (Build.VERSION.SDK_INT < 21) {
-            renderersFactory.setMediaCodecSelector(MediaCodecSelector.DEFAULT);
-            Log.i(TAG, "exo_use_default_codec_selector sdk=" + Build.VERSION.SDK_INT);
+        if (mUseIjkPlayer) {
+            if (!IjkPlayerHelper.isAvailable()) {
+                Log.w(TAG, "ijk_player_native_not_available_force_exo");
+                mUseIjkPlayer = false;
+            } else if (root != null) {
+                initIjkPlayer();
+                return;
+            } else {
+                Log.i(TAG, "init_ijk_player_deferred_root_not_ready");
+                return;
+            }
+        }
+        // 如果已存在播放器，先清理
+        if (exoPlayer != null) {
+            try {
+                exoPlayer.stop();
+                exoPlayer.release();
+            } catch (Throwable t) {
+                Log.w(TAG, "exo_release_old", t);
+            }
+            exoPlayer = null;
+        }
+        // 清除旧playerView下的播放器
+        if (playerView != null) {
+            playerView.setPlayer(null);
+        } else {
+            playerView = new PlayerView(this);
+            playerView.setBackgroundColor(Color.BLACK);
+            playerView.setUseController(false);
+            playerView.setFocusable(false);
         }
 
+        DefaultRenderersFactory renderersFactory = new DefaultRenderersFactory(this) {
+            @Override
+            protected void buildAudioRenderers(android.content.Context context,
+                    int extensionRendererMode,
+                    com.google.android.exoplayer2.mediacodec.MediaCodecSelector mediaCodecSelector,
+                    boolean enableDecoderFallback,
+                    com.google.android.exoplayer2.audio.AudioSink audioSink,
+                    android.os.Handler eventHandler,
+                    com.google.android.exoplayer2.audio.AudioRendererEventListener eventListener,
+                    java.util.ArrayList<com.google.android.exoplayer2.Renderer> out) {
+                boolean isX86Arch = false;
+                try {
+                    if (Build.VERSION.SDK_INT >= 21) {
+                        String[] abis = Build.SUPPORTED_ABIS;
+                        if (abis != null) {
+                            for (String a : abis) {
+                                if (a.equals("x86") || a.equals("x86_64")) {
+                                    isX86Arch = true;
+                                    break;
+                                }
+                            }
+                        }
+                    } else {
+                        String abi1 = Build.CPU_ABI;
+                        String abi2 = Build.CPU_ABI2;
+                        if (abi1 != null && (abi1.equals("x86") || abi1.equals("x86_64"))) {
+                            isX86Arch = true;
+                        }
+                        if (!isX86Arch && abi2 != null && (abi2.equals("x86") || abi2.equals("x86_64"))) {
+                            isX86Arch = true;
+                        }
+                    }
+                } catch (Throwable ignored) {}
+                boolean ffmpegOk = false;
+                if (!isX86Arch) {
+                    ffmpegOk = com.google.android.exoplayer2.ext.ffmpeg.FfmpegLibrary.isAvailable();
+                }
+                Log.i(TAG, "build_audio_renderers ffmpeg=" + ffmpegOk + " sdk=" + Build.VERSION.SDK_INT
+                        + " x86=" + isX86Arch);
+                if (ffmpegOk) {
+                    try {
+                        com.google.android.exoplayer2.Renderer ffmpegAudio =
+                                new com.google.android.exoplayer2.ext.ffmpeg.FfmpegAudioRenderer(
+                                        eventHandler, eventListener, new com.google.android.exoplayer2.audio.AudioProcessor[0]);
+                        out.add(ffmpegAudio);
+                        Log.i(TAG, "ffmpeg_audio_renderer_added");
+                    } catch (Throwable t) {
+                        Log.w(TAG, "ffmpeg_audio_renderer_init_failed", t);
+                    }
+                }
+                // 同TVBOX方案：EXTENSION_RENDERER_MODE_PREFER + enableDecoderFallback
+                // MediaCodecAudioRenderer可能在某些低版本设备崩溃，但fallback机制会处理
+                try {
+                    // API 19: MediaCodecList.getCodecCapabilities()崩溃，跳过MediaCodecAudioRenderer
+                    if (Build.VERSION.SDK_INT >= 21) {
+                        super.buildAudioRenderers(context, extensionRendererMode, mediaCodecSelector,
+                                enableDecoderFallback, audioSink, eventHandler, eventListener, out);
+                    } else {
+                        Log.i(TAG, "sdk19_skip_mediacodec_audio_renderer_use_ffmpeg_only");
+                    }
+                } catch (Throwable t) {
+                    Log.w(TAG, "build_audio_renderers_crash", t);
+                }
+            }
+
+            @Override
+            protected void buildVideoRenderers(android.content.Context context,
+                    @com.google.android.exoplayer2.DefaultRenderersFactory.ExtensionRendererMode int extensionRendererMode,
+                    com.google.android.exoplayer2.mediacodec.MediaCodecSelector mediaCodecSelector,
+                    boolean enableDecoderFallback,
+                    android.os.Handler eventHandler,
+                    com.google.android.exoplayer2.video.VideoRendererEventListener eventListener,
+                    long allowedVideoJoiningTimeMs,
+                    java.util.ArrayList<com.google.android.exoplayer2.Renderer> out) {
+                if (Build.VERSION.SDK_INT < 21 && sVideoDecodeFailed) {
+                    Log.i(TAG, "skip_video_renderer_on_api19_decode_failed");
+                    return;
+                }
+                try {
+                    super.buildVideoRenderers(context, extensionRendererMode, mediaCodecSelector,
+                            enableDecoderFallback, eventHandler, eventListener, allowedVideoJoiningTimeMs, out);
+                    Log.i(TAG, "video_renderers_mediacodec_added count=" + out.size());
+                } catch (Throwable t) {
+                    Log.w(TAG, "video_renderers_build_crash_sdk=" + Build.VERSION.SDK_INT, t);
+                }
+                try {
+                    Class<?> cls = Class.forName("com.google.android.exoplayer2.ext.ffmpeg.FfmpegVideoRenderer");
+                    java.lang.reflect.Constructor<?> ctor = cls.getConstructor(
+                            android.os.Handler.class,
+                            com.google.android.exoplayer2.video.VideoRendererEventListener.class,
+                            long.class);
+                    com.google.android.exoplayer2.Renderer ffmpegVideo =
+                            (com.google.android.exoplayer2.Renderer) ctor.newInstance(
+                                    eventHandler, eventListener, allowedVideoJoiningTimeMs);
+                    out.add(ffmpegVideo);
+                    Log.i(TAG, "ffmpeg_video_renderer_added total=" + out.size());
+                } catch (ClassNotFoundException ignored) {
+                    Log.i(TAG, "ffmpeg_video_renderer_not_available_jellyfin_audio_only");
+                } catch (Throwable t) {
+                    Log.w(TAG, "ffmpeg_video_renderer_init_failed", t);
+                }
+            }
+        };
+        renderersFactory.setEnableDecoderFallback(true);
+        renderersFactory.setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_PREFER);
+        if (Build.VERSION.SDK_INT < 21) {
+            renderersFactory.forceDisableMediaCodecAsynchronousQueueing();
+            renderersFactory.experimentalSetSynchronizeCodecInteractionsWithQueueingEnabled(true);
+            Log.i(TAG, "sdk19_force_sync_codec_queue");
+        }
+        Log.i(TAG, "exo_renderers_factory_ready sdk=" + Build.VERSION.SDK_INT
+                + " ffmpeg=" + com.google.android.exoplayer2.ext.ffmpeg.FfmpegLibrary.isAvailable());
+
+        // 直播专用小缓冲配置（1G内存友好，省内存不爆）
+        DefaultLoadControl loadControl = new DefaultLoadControl.Builder()
+                .setBufferDurationsMs(
+                        1500,   // minBufferMs: 1.5秒最小缓冲
+                        3000,   // maxBufferMs: 3秒最大缓冲（默认5000太大，直播不需要）
+                        1000,   // bufferForPlaybackMs: 起播缓冲1秒
+                        1500    // bufferForPlaybackAfterRebufferMs: 重缓冲1.5秒
+                ).build();
         exoPlayer = new ExoPlayer.Builder(this)
                 .setRenderersFactory(renderersFactory)
+                .setLoadControl(loadControl)
                 .build();
         playerView.setPlayer(exoPlayer);
-        root.addView(playerView, 0, new FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.MATCH_PARENT));
+        // 确保playerView已经添加到root
+        if (playerView.getParent() == null) {
+            root.addView(playerView, 0, new FrameLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.MATCH_PARENT));
+        }
         exoPlayer.addListener(new Player.Listener() {
+            private boolean videoDecodeFailedOnApi19 = false;
+
             @Override
             public void onPlaybackStateChanged(int playbackState) {
                 Log.i(TAG, "exo_state_changed state=" + playbackState);
@@ -528,14 +759,61 @@ public class MainActivity extends Activity {
                     overlayText.setVisibility(View.GONE);
                     handler.removeCallbacks(hideOverlayRunnable);
                     updateStatus();
+                    if (videoDecodeFailedOnApi19) {
+                        showCenterMessage("音频播放中（视频解码器模拟器不可用）", 3000);
+                    }
+                    startBlackscreenDetection();
                 } else if (playbackState == Player.STATE_BUFFERING) {
                     showPlaybackOverlay();
+                } else if (playbackState == Player.STATE_ENDED) {
+                    handler.removeCallbacks(blackscreenCheckRunnable);
                 }
+            }
+
+            @Override
+            public void onVideoSizeChanged(com.google.android.exoplayer2.video.VideoSize videoSize) {
+                if (videoSize != null && videoSize.width > 0 && videoSize.height > 0) {
+                    Log.i(TAG, "exo_video_size_changed w=" + videoSize.width + " h=" + videoSize.height);
+                    mVideoRendered = true;
+                    handler.removeCallbacks(blackscreenCheckRunnable);
+                    mBlackscreenDetectInProgress = false;
+                }
+            }
+
+            @Override
+            public void onAudioSessionIdChanged(int audioSessionId) {
+                Log.i(TAG, "exo_audio_session_id=" + audioSessionId);
+                mAudioRendered = true;
             }
 
             @Override
             public void onPlayerError(PlaybackException error) {
                 Log.e(TAG, "exo_player_error", error);
+                handler.removeCallbacks(blackscreenCheckRunnable);
+                mBlackscreenDetectInProgress = false;
+                boolean isVideoDecodeError = false;
+                Throwable cause = error;
+                while (cause != null) {
+                    String cn = cause.getClass().getName();
+                    if (cn.contains("MediaCodecVideoDecoderException") || cn.contains("MediaCodecDecoderException")) {
+                        isVideoDecodeError = true;
+                        break;
+                    }
+                    cause = cause.getCause();
+                }
+                if (isVideoDecodeError) {
+                    Log.w(TAG, "exo_video_decode_error_switch_to_ijk");
+                    switchPlayerToIjk();
+                    return;
+                }
+                if (Build.VERSION.SDK_INT < 21 && isVideoDecodeError && !videoDecodeFailedOnApi19) {
+                    Log.i(TAG, "video_decode_error_on_api19_rebuild_without_video");
+                    videoDecodeFailedOnApi19 = true;
+                    sVideoDecodeFailed = true;
+                    initExoPlayer();
+                    playCurrentWithExo();
+                    return;
+                }
                 boolean switched = switchToNextLine(true);
                 if (switched) {
                     Log.i(TAG, "auto_switch_line on_player_error");
@@ -544,6 +822,188 @@ public class MainActivity extends Activity {
                 }
             }
         });
+    }
+
+    private void startBlackscreenDetection() {
+        handler.removeCallbacks(blackscreenCheckRunnable);
+        if (mBlackscreenDetectInProgress) return;
+        mBlackscreenDetectInProgress = true;
+        handler.postDelayed(blackscreenCheckRunnable, BLACK_SCREEN_CHECK_DELAY);
+        Log.i(TAG, "blackscreen_detection_started delay=" + BLACK_SCREEN_CHECK_DELAY
+                + " videoRendered=" + mVideoRendered + " audioRendered=" + mAudioRendered);
+    }
+
+    private void switchPlayerToIjk() {
+        if (mUseIjkPlayer) return;
+        if (mIjkPlayerRetryCount >= MAX_IJK_RETRY) {
+            Log.w(TAG, "ijk_player_max_retry_reached abort_switch");
+            showCenterMessage("自动播放器切换失败，请手动切换解码模式", 5000);
+            mIjkPlayerRetryCount = 0;
+            return;
+        }
+        mIjkPlayerRetryCount++;
+        Log.i(TAG, "switch_to_ijk retry=" + mIjkPlayerRetryCount + "/" + MAX_IJK_RETRY);
+        showCenterMessage("检测到黑屏，正在切换播放器...", 2500);
+        handler.removeCallbacks(blackscreenCheckRunnable);
+        mBlackscreenDetectInProgress = false;
+        mUseIjkPlayer = true;
+        initIjkPlayer();
+        playCurrentWithIjk();
+    }
+
+    private void switchPlayerBackToExo() {
+        if (!mUseIjkPlayer) return;
+        Log.i(TAG, "switch_back_to_exo");
+        releasePlayer();
+        mUseIjkPlayer = false;
+        if (playerView != null) {
+            playerView.setVisibility(View.VISIBLE);
+        }
+        if (mIjkTextureView != null) {
+            mIjkTextureView.setVisibility(View.GONE);
+        }
+        initExoPlayer();
+        playCurrentWithExo();
+    }
+
+    private void initIjkPlayer() {
+        if (!IjkPlayerHelper.isAvailable()) {
+            Log.w(TAG, "init_ijk_player_but_native_not_available_fallback_exo");
+            mUseIjkPlayer = false;
+            initExoPlayer();
+            return;
+        }
+        Log.i(TAG, "init_ijk_player api19_fallback");
+        // 清理旧播放器
+        releasePlayer();
+        if (mIjkTextureView == null) {
+            mIjkTextureView = new TextureView(this);
+            mIjkTextureView.setLayoutParams(new FrameLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.MATCH_PARENT));
+        }
+        if (mIjkTextureView.getParent() == null) {
+            root.addView(mIjkTextureView, 0);
+        }
+        // 确保PlayerView隐藏（如果存在）
+        if (playerView != null) {
+            playerView.setVisibility(View.GONE);
+        }
+        mIjkTextureView.setVisibility(View.VISIBLE);
+        if (mIjkPlayer == null) {
+            mIjkPlayer = new IjkPlayerHelper(mIjkTextureView, new IjkPlayerHelper.IjkPlayerCallback() {
+                @Override
+                public void onPrepared() {
+                    Log.i(TAG, "ijk_on_prepared");
+                    handler.post(new Runnable() {
+                        @Override
+                        public void run() {
+                            if (loadingOverlay != null && loadingOverlay.getVisibility() == View.VISIBLE) {
+                                loadingOverlay.setVisibility(View.GONE);
+                            }
+                            overlayText.setVisibility(View.GONE);
+                            handler.removeCallbacks(hideOverlayRunnable);
+                            updateStatus();
+                        }
+                    });
+                }
+
+                @Override
+                public void onError(String msg) {
+                    Log.e(TAG, "ijk_on_error msg=" + msg);
+                    handler.post(new Runnable() {
+                        @Override
+                        public void run() {
+                            boolean switched = switchToNextLine(true);
+                            if (switched) {
+                                Log.i(TAG, "ijk_error_switch_line");
+                                return;
+                            }
+                            Log.w(TAG, "ijk_error_no_more_lines try_fallback_to_exo");
+                            showCenterMessage("线路异常，回退到ExoPlayer...", 3000);
+                            switchPlayerBackToExo();
+                        }
+                    });
+                }
+
+                @Override
+                public void onInfo(int what, int extra) {
+                }
+
+                @Override
+                public void onCompletion() {
+                    Log.i(TAG, "ijk_on_completion");
+                }
+
+                @Override
+                public void onVideoSizeChanged(int width, int height) {
+                }
+            });
+        }
+    }
+
+    private void playCurrentWithIjk() {
+        if (channels.isEmpty() || mIjkPlayer == null) return;
+        Channel ch = channels.get(currentIndex);
+        preferences.edit().putString(PREF_CHANNEL_PID, String.valueOf(currentIndex)).apply();
+        showPlaybackOverlay();
+        updateStatus();
+
+        if (ch.lines.isEmpty()) {
+            Log.w(TAG, "channel_no_lines name=" + ch.name);
+            return;
+        }
+
+        sortLinesByLatency(ch);
+
+        int lineIdx = Math.min(ch.currentLineIndex, ch.lines.size() - 1);
+        if (lineIdx < 0) lineIdx = 0;
+        StreamLine line = ch.lines.get(lineIdx);
+        String url = line.url;
+
+        String latStr = !line.checked ? "?" : (!line.good ? "TIMEOUT" : line.latencyMs + "ms");
+        Log.i(TAG, "ijk_play index=" + currentIndex + " name=" + ch.name
+                + " line=" + (lineIdx + 1) + "/" + ch.lines.size()
+                + " lat=" + latStr
+                + " url=" + url);
+
+        if (url == null || url.isEmpty()) return;
+        mIjkPlayer.playUrl(url);
+    }
+
+    private void stopPlayer() {
+        if (mUseIjkPlayer) {
+            if (mIjkPlayer != null) mIjkPlayer.stop();
+        } else {
+            if (exoPlayer != null) exoPlayer.stop();
+        }
+    }
+
+    private void releasePlayer() {
+        if (mUseIjkPlayer) {
+            if (mIjkPlayer != null) {
+                mIjkPlayer.release();
+                mIjkPlayer = null;
+            }
+        } else {
+            if (exoPlayer != null) {
+                try { exoPlayer.stop(); } catch (Throwable ignored) {}
+                try { exoPlayer.release(); } catch (Throwable ignored) {}
+                exoPlayer = null;
+            }
+        }
+    }
+
+    private boolean playerIsPlaying() {
+        if (mUseIjkPlayer) {
+            return mIjkPlayer != null && mIjkPlayer.isPlaying();
+        } else {
+            if (exoPlayer != null) {
+                int state = exoPlayer.getPlaybackState();
+                return state == Player.STATE_READY || state == Player.STATE_BUFFERING;
+            }
+            return false;
+        }
     }
 
     private void loadM3uList() {
@@ -950,9 +1410,12 @@ public class MainActivity extends Activity {
                 + " merged_multi_line=" + multiLineCount + " total_lines=" + totalLines
                 + " max_lines_per_channel=" + maxLines);
 
-        parsed.sort((a, b) -> {
-            if (a.lines.size() != b.lines.size()) return b.lines.size() - a.lines.size();
-            return a.name.compareTo(b.name);
+        java.util.Collections.sort(parsed, new java.util.Comparator<Channel>() {
+            @Override
+            public int compare(Channel a, Channel b) {
+                if (a.lines.size() != b.lines.size()) return b.lines.size() - a.lines.size();
+                return a.name.compareTo(b.name);
+            }
         });
 
         if (parsed.isEmpty()) {
@@ -991,13 +1454,23 @@ public class MainActivity extends Activity {
         selectedChannelInGroup = findChannelIndexInGroup(selectedGroupIndex, curCh);
 
         groupAdapter.notifyDataSetChanged();
-        channelItemAdapter.notifyDataSetChanged();
+        safeNotifyChannelAdapter();
         updateMenuHeader();
-        playCurrentWithExo();
+        if (autoStartOnBoot) {
+            playCurrentWithExo();
+        }
         detectBadChannels();
     }
 
     private void playCurrentWithExo() {
+        if (mUseIjkPlayer) {
+            playCurrentWithIjk();
+            return;
+        }
+        mVideoRendered = false;
+        mAudioRendered = false;
+        handler.removeCallbacks(blackscreenCheckRunnable);
+        mBlackscreenDetectInProgress = false;
         if (channels.isEmpty() || exoPlayer == null) return;
         Channel ch = channels.get(currentIndex);
         preferences.edit().putString(PREF_CHANNEL_PID, String.valueOf(currentIndex)).apply();
@@ -1023,19 +1496,35 @@ public class MainActivity extends Activity {
                 + " url=" + url);
 
         if (url == null || url.isEmpty()) return;
-        androidx.media3.datasource.DefaultHttpDataSource.Factory httpFactory =
-                new androidx.media3.datasource.DefaultHttpDataSource.Factory()
-                        .setConnectTimeoutMs(15000)
-                        .setReadTimeoutMs(15000)
-                        .setAllowCrossProtocolRedirects(true)
-                        .setUserAgent("Mozilla/5.0 (Linux; Android 14; TV) AppleWebKit/537.36 Chrome/120.0 Mobile");
-        MediaItem mediaItem = MediaItem.fromUri(Uri.parse(url));
-        androidx.media3.exoplayer.hls.HlsMediaSource.Factory hlsFactory =
-                new androidx.media3.exoplayer.hls.HlsMediaSource.Factory(httpFactory);
-        androidx.media3.exoplayer.source.ProgressiveMediaSource.Factory progFactory =
-                new androidx.media3.exoplayer.source.ProgressiveMediaSource.Factory(httpFactory);
-        androidx.media3.exoplayer.source.MediaSource source;
+        String userAgent = "Mozilla/5.0 (Linux; Android " + Build.VERSION.SDK_INT + ") AppleWebKit/537.36 Chrome/120.0 Mobile";
+        // Android 4.4: HttpURLConnection有已知Bug，使用OkHttp作为数据源（同TVBOX方案）
+        HlsMediaSource.Factory hlsFactory;
+        ProgressiveMediaSource.Factory progFactory;
+        if (Build.VERSION.SDK_INT < 21) {
+            OkHttpClient okClient = new OkHttpClient.Builder()
+                    .connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
+                    .readTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
+                    .followRedirects(true)
+                    .followSslRedirects(true)
+                    .build();
+            OkHttpDataSource.Factory okFactory = new OkHttpDataSource.Factory(okClient)
+                    .setUserAgent(userAgent);
+            hlsFactory = new HlsMediaSource.Factory(okFactory);
+            progFactory = new ProgressiveMediaSource.Factory(okFactory);
+            Log.i(TAG, "exo_datasource=okhttp sdk=" + Build.VERSION.SDK_INT);
+        } else {
+            DefaultHttpDataSource.Factory defFactory = new DefaultHttpDataSource.Factory()
+                    .setUserAgent(userAgent)
+                    .setConnectTimeoutMs(15000)
+                    .setReadTimeoutMs(15000)
+                    .setAllowCrossProtocolRedirects(true);
+            hlsFactory = new HlsMediaSource.Factory(defFactory);
+            progFactory = new ProgressiveMediaSource.Factory(defFactory);
+        }
+        com.google.android.exoplayer2.source.MediaSource source;
         String lowerUrl = url.toLowerCase();
+        Uri uri = Uri.parse(url);
+        MediaItem mediaItem = MediaItem.fromUri(uri);
         if (lowerUrl.endsWith(".mp4") || lowerUrl.endsWith(".mkv") || lowerUrl.endsWith(".avi")
                 || lowerUrl.endsWith(".flv") || lowerUrl.endsWith(".webm") || lowerUrl.endsWith(".mov")) {
             source = progFactory.createMediaSource(mediaItem);
@@ -1116,7 +1605,13 @@ public class MainActivity extends Activity {
                 pool.shutdown();
 
                 final int[] badLineCount = {0};
+                int[] emptyLineCount = {0};
                 for (Channel ch : channels) {
+                    if (ch.lines.isEmpty()) {
+                        emptyLineCount[0]++;
+                        Log.w(TAG, "channel_zero_lines name=" + ch.name.substring(0, Math.min(20, ch.name.length())));
+                        continue;
+                    }
                     boolean hasGood = false;
                     for (StreamLine sl : ch.lines) {
                         if (sl.good) { hasGood = true; break; }
@@ -1125,11 +1620,16 @@ public class MainActivity extends Activity {
                         badLineCount[0]++;
                     }
                 }
-                Log.i(TAG, "channel_detect done bad_channels=" + badLineCount[0] + " total_channels=" + channels.size());
+                Log.i(TAG, "channel_detect done bad=" + badLineCount[0] + " empty=" + emptyLineCount[0]
+                        + " total=" + channels.size());
                 handler.post(new Runnable() {
                     @Override
                     public void run() {
-                        channelItemAdapter.notifyDataSetChanged();
+                        int cnt = channelItemAdapter.getItemCount();
+                        safeNotifyChannelAdapter();
+                        if (cnt > 0 && Build.VERSION.SDK_INT >= 20) {
+                            if (cnt > 0 && Build.VERSION.SDK_INT >= 20) { channelItemAdapter.notifyItemRangeChanged(0, cnt); }
+                        }
                         groupAdapter.notifyDataSetChanged();
                         updateStatus();
                     }
@@ -1138,6 +1638,108 @@ public class MainActivity extends Activity {
         }, "ChannelDetectAsync").start();
     }
 
+
+    private void safeNotifyChannelAdapter() {
+        if (channelItemAdapter == null) return;
+        if (Build.VERSION.SDK_INT >= 20 && channelRecyclerView == null) return;
+        if (Build.VERSION.SDK_INT < 20) {
+            Log.d(TAG, "safeNotify API19 mode: manualRender");
+            // API 19: 绕过 RecyclerView 适配器，直接手动构建视图
+            channelItemAdapter.setItems(getCurrentGroupChannels());
+            manualRenderChannelList();
+        } else {
+            channelItemAdapter.updateData(getCurrentGroupChannels());
+            channelItemAdapter.notifyDataSetChanged();
+        }
+    }
+
+    @android.annotation.TargetApi(19)
+    private void forceRebindAllVisibleItems() {
+        if (Build.VERSION.SDK_INT < 20) return;
+        if (channelRecyclerView == null || channelItemAdapter == null) return;
+        channelRecyclerView.post(new Runnable() {
+            @Override
+            public void run() {
+                int childCount = channelRecyclerView.getChildCount();
+                if (childCount == 0) {
+                    // API 19 RecyclerView 尚未完成首次布局，直接强制整个列表刷新
+                    channelRecyclerView.post(new Runnable() {
+                        @Override
+                        public void run() {
+                            channelItemAdapter.notifyDataSetChanged();
+                            channelRecyclerView.requestLayout();
+                            channelRecyclerView.invalidate();
+                        }
+                    });
+                    return;
+                }
+                for (int i = 0; i < childCount; i++) {
+                    View child = channelRecyclerView.getChildAt(i);
+                    int pos = channelRecyclerView.getChildAdapterPosition(child);
+                    if (pos >= 0) {
+                        channelItemAdapter.notifyItemChanged(pos);
+                    }
+                }
+                // 二次刷新确保所有视图重绘
+                channelRecyclerView.post(new Runnable() {
+                    @Override
+                    public void run() {
+                        int childCount2 = channelRecyclerView.getChildCount();
+                        for (int i = 0; i < childCount2; i++) {
+                            View child = channelRecyclerView.getChildAt(i);
+                            int pos = channelRecyclerView.getChildAdapterPosition(child);
+                            if (pos >= 0) {
+                                channelItemAdapter.notifyItemChanged(pos);
+                            }
+                        }
+                        // 强制 RecyclerView 重新布局
+                        channelRecyclerView.requestLayout();
+                        channelRecyclerView.invalidate();
+                    }
+                });
+            }
+        });
+    }
+    private void manualRenderChannelList() {
+        if (channelItemAdapter == null) return;
+        if (channelListInnerLayout == null) return;
+        // 仅在菜单可见时才重建视图（避免后台重建大量View浪费内存）
+        if (menuPanel.getVisibility() != View.VISIBLE) return;
+        // 记录列表可见区域顶部位置
+        int firstVisiblePos = 0;
+        View firstChild = channelListInnerLayout.getChildCount() > 0 ? channelListInnerLayout.getChildAt(0) : null;
+        if (firstChild != null) {
+            firstVisiblePos = 0;
+            if (firstVisiblePos < 0) firstVisiblePos = 0;
+        }
+        // 移除所有子视图
+        channelListInnerLayout.removeAllViews();
+        List<Channel> items = channelItemAdapter.getItems();
+        if (items == null || items.isEmpty()) return;
+        for (int i = 0; i < items.size(); i++) {
+            Channel ch = items.get(i);
+            LinearLayout container = channelItemAdapter.createItemView(ch, i);
+            channelListInnerLayout.addView(container);
+        }
+        // 尝试保持滚动位置
+        final int scrollTarget = firstVisiblePos;
+        channelListContainer.post(new Runnable() {
+            @Override
+            public void run() {
+                int childCount = channelListInnerLayout.getChildCount();
+                if (childCount > scrollTarget) {
+                    View target = channelListInnerLayout.getChildAt(Math.min(scrollTarget, childCount - 1));
+                    if (target != null) {
+                        target.requestFocus();
+                        int top = target.getTop();
+                        channelListContainer.scrollTo(0, Math.max(0, top - dp(4)));
+                    }
+                }
+                channelListContainer.requestLayout();
+                channelListContainer.invalidate();
+            }
+        });
+    }
     private synchronized void rebuildVisibleLists() {
         List<Channel> visible = new ArrayList<>();
         int hiddenCount = 0;
@@ -1154,7 +1756,7 @@ public class MainActivity extends Activity {
         }
         if (hiddenCount == 0) {
             groupAdapter.notifyDataSetChanged();
-            channelItemAdapter.notifyDataSetChanged();
+            safeNotifyChannelAdapter();
             return;
         }
         String curName = "";
@@ -1188,7 +1790,7 @@ public class MainActivity extends Activity {
         }
         Log.i(TAG, "channel_rebuild hidden=" + hiddenCount + " remain=" + channels.size());
         groupAdapter.notifyDataSetChanged();
-        channelItemAdapter.notifyDataSetChanged();
+        safeNotifyChannelAdapter();
         updateMenuHeader();
         if (channels.isEmpty()) {
             showCenterMessage("所有频道均无法播放", 0);
@@ -1244,6 +1846,31 @@ public class MainActivity extends Activity {
         // the WebView itself into a software layer leaves the official player with
         // audio but a black video surface on TV/emulator builds.
         bridgeWebView.setLayerType(View.LAYER_TYPE_HARDWARE, null);
+    }
+
+    private void applyPlaybackModeToPlayerEngine() {
+        String effective = resolveEffectiveMode();
+        boolean useIjk;
+        if (PLAYBACK_MODE_SW.equals(effective)) {
+            useIjk = true;
+        } else if (PLAYBACK_MODE_HW.equals(effective)) {
+            useIjk = false;
+        } else { // auto
+            useIjk = Build.VERSION.SDK_INT < 21 && IjkPlayerHelper.isAvailable();
+        }
+        if (useIjk != mUseIjkPlayer) {
+            mUseIjkPlayer = useIjk;
+            Log.i(TAG, "playback_engine mode=" + playbackMode + " effective=" + effective
+                    + " useIjk=" + useIjk + " sdk=" + Build.VERSION.SDK_INT);
+        }
+    }
+
+    private String resolveEffectiveMode() {
+        if (PLAYBACK_MODE_AUTO.equals(playbackMode)) {
+            return (Build.VERSION.SDK_INT < 21 && IjkPlayerHelper.isAvailable())
+                    ? PLAYBACK_MODE_SW : PLAYBACK_MODE_HW;
+        }
+        return playbackMode;
     }
 
     private void scheduleBridgeInjection(long delayMs) {
@@ -1343,7 +1970,7 @@ public class MainActivity extends Activity {
         if (selectedGroupIndex < 0) selectedGroupIndex = 0;
         selectedChannelInGroup = findChannelIndexInGroup(selectedGroupIndex, curCh);
         groupAdapter.notifyDataSetChanged();
-        channelItemAdapter.notifyDataSetChanged();
+        safeNotifyChannelAdapter();
         requestCurrentStream("channel");
     }
 
@@ -1412,6 +2039,7 @@ public class MainActivity extends Activity {
     }
 
     private String playbackModeLabel() {
+        if (PLAYBACK_MODE_AUTO.equals(playbackMode)) return "自动";
         return PLAYBACK_MODE_SW.equals(playbackMode) ? "软解" : "硬解";
     }
 
@@ -1547,7 +2175,7 @@ public class MainActivity extends Activity {
         updateMenuHeader();
         menuPanel.setVisibility(View.VISIBLE);
         groupAdapter.notifyDataSetChanged();
-        channelItemAdapter.notifyDataSetChanged();
+        safeNotifyChannelAdapter();
         scrollGroupToPosition(selectedGroupIndex);
         syncRightPanel();
         groupRecyclerView.requestFocus();
@@ -1563,10 +2191,14 @@ public class MainActivity extends Activity {
         updateMenuHeader();
         menuPanel.setVisibility(View.VISIBLE);
         groupAdapter.notifyDataSetChanged();
-        channelItemAdapter.notifyDataSetChanged();
+        safeNotifyChannelAdapter();
         scrollGroupToPosition(selectedGroupIndex);
         scrollChannelToPosition(selectedChannelInGroup);
-        channelRecyclerView.requestFocus();
+        if (Build.VERSION.SDK_INT < 20 && channelListContainer != null) {
+            channelListContainer.requestFocus();
+        } else if (channelRecyclerView != null) {
+            channelRecyclerView.requestFocus();
+        }
         resetMenuAutoHide();
     }
 
@@ -1655,7 +2287,7 @@ public class MainActivity extends Activity {
     }
 
     private void syncRightPanel() {
-        channelItemAdapter.notifyDataSetChanged();
+        safeNotifyChannelAdapter();
         scrollChannelToPosition(selectedChannelInGroup);
     }
 
@@ -1673,7 +2305,11 @@ public class MainActivity extends Activity {
         if (position < menuGroups.size()) {
             onGroupSelected(position);
             focusOnGroupSide = false;
-            channelRecyclerView.requestFocus();
+            if (Build.VERSION.SDK_INT < 20 && channelListContainer != null) {
+                channelListContainer.requestFocus();
+            } else if (channelRecyclerView != null) {
+                channelRecyclerView.requestFocus();
+            }
         } else if (position == menuGroups.size()) {
             showSettingsMenu();
         } else if (position == menuGroups.size() + 1) {
@@ -1696,13 +2332,21 @@ public class MainActivity extends Activity {
         if (selectedGroupIndex < 0) selectedGroupIndex = 0;
         requestCurrentStream();
         groupAdapter.notifyDataSetChanged();
-        channelItemAdapter.notifyDataSetChanged();
+        safeNotifyChannelAdapter();
         hideMenu();
     }
 
     private void togglePlaybackMode() {
-        playbackMode = PLAYBACK_MODE_SW.equals(playbackMode) ? PLAYBACK_MODE_HW : PLAYBACK_MODE_SW;
+        if (PLAYBACK_MODE_AUTO.equals(playbackMode)) {
+            playbackMode = PLAYBACK_MODE_HW;
+        } else if (PLAYBACK_MODE_HW.equals(playbackMode)) {
+            playbackMode = PLAYBACK_MODE_SW;
+        } else {
+            playbackMode = PLAYBACK_MODE_AUTO;
+        }
         preferences.edit().putString(PREF_PLAYBACK_MODE, playbackMode).apply();
+        applyPlaybackModeToPlayerEngine();
+        initExoPlayer();
         applyPlaybackModeToWebView();
     }
 
@@ -1745,15 +2389,42 @@ public class MainActivity extends Activity {
     }
 
     private void scrollChannelToPosition(int position) {
-        if (channelRecyclerView == null) return;
-        List<Channel> chans = getCurrentGroupChannels();
-        if (position < 0) position = 0;
-        if (position >= chans.size()) position = Math.max(0, chans.size() - 1);
-        if (channelRecyclerView.getLayoutManager() instanceof LinearLayoutManager) {
-            ((LinearLayoutManager) channelRecyclerView.getLayoutManager()).scrollToPositionWithOffset(position, dp(4));
+        if (Build.VERSION.SDK_INT < 20) {
+            if (channelListContainer == null || channelListInnerLayout == null) return;
+            if (position < 0) position = 0;
+            int total = channelItemAdapter.getItemCount();
+            if (position >= total) position = Math.max(0, total - 1);
+            final int targetPos = position;
+            channelListContainer.post(new Runnable() {
+                @Override
+                public void run() {
+                    int childCount = channelListInnerLayout.getChildCount();
+                    if (childCount > 0 && targetPos < childCount) {
+                        View target = channelListInnerLayout.getChildAt(targetPos);
+                        if (target != null) {
+                            int top = target.getTop();
+                            channelListContainer.scrollTo(0, Math.max(0, top - dp(4)));
+                            target.requestFocus();
+                        }
+                    }
+                }
+            });
         } else {
-            channelRecyclerView.scrollToPosition(position);
+            if (channelRecyclerView == null) return;
+            if (position < 0) position = 0;
+            int total = channelItemAdapter.getItemCount();
+            if (position >= total) position = Math.max(0, total - 1);
+            if (channelRecyclerView.getLayoutManager() instanceof LinearLayoutManager) {
+                ((LinearLayoutManager) channelRecyclerView.getLayoutManager()).scrollToPositionWithOffset(position, dp(4));
+            } else {
+                channelRecyclerView.scrollToPosition(position);
+            }
         }
+    }
+
+    private void refreshMenuAdapters() {
+        if (groupAdapter != null) groupAdapter.notifyDataSetChanged();
+        safeNotifyChannelAdapter();
     }
 
     private void appendNumber(int digit) {
@@ -1833,6 +2504,7 @@ public class MainActivity extends Activity {
                 if (!focusOnGroupSide) {
                     focusOnGroupSide = true;
                     groupRecyclerView.requestFocus();
+                    refreshMenuAdapters();
                 }
                 return true;
             }
@@ -1840,7 +2512,9 @@ public class MainActivity extends Activity {
                 if (focusOnGroupSide) {
                     if (selectedGroupIndex < menuGroups.size()) {
                         focusOnGroupSide = false;
-                        channelRecyclerView.requestFocus();
+                        View focusTarget = (Build.VERSION.SDK_INT < 20 && channelListContainer != null) ? channelListContainer : channelRecyclerView;
+                        if (focusTarget != null) focusTarget.requestFocus();
+                        refreshMenuAdapters();
                     } else {
                         onGroupItemClicked(selectedGroupIndex);
                     }
@@ -1888,7 +2562,7 @@ public class MainActivity extends Activity {
             syncRightPanel();
             updateMenuHeader();
         } else if (!isGroup) {
-            channelItemAdapter.notifyDataSetChanged();
+            safeNotifyChannelAdapter();
         }
         groupAdapter.notifyDataSetChanged();
         scrollGroupToPosition(selectedGroupIndex);
@@ -1901,7 +2575,7 @@ public class MainActivity extends Activity {
         if (total <= 0) return;
         selectedChannelInGroup = (selectedChannelInGroup + delta + total) % total;
         scrollChannelToPosition(selectedChannelInGroup);
-        channelItemAdapter.notifyDataSetChanged();
+        safeNotifyChannelAdapter();
         resetMenuAutoHide();
     }
 
@@ -1929,10 +2603,13 @@ public class MainActivity extends Activity {
             if (Math.abs(dx) > Math.abs(dy)) {
                 if (dx < 0) {
                     focusOnGroupSide = false;
-                    channelRecyclerView.requestFocus();
+                    View focusTarget = (Build.VERSION.SDK_INT < 20 && channelListContainer != null) ? channelListContainer : channelRecyclerView;
+                    if (focusTarget != null) focusTarget.requestFocus();
+                    refreshMenuAdapters();
                 } else {
                     focusOnGroupSide = true;
                     groupRecyclerView.requestFocus();
+                    refreshMenuAdapters();
                 }
             }
             return;
@@ -1989,6 +2666,23 @@ public class MainActivity extends Activity {
         String deviceId = getDeviceId();
         Log.i(TAG, "ruyi_init deviceId=" + deviceId);
         ruyiApi = new RuyiApi(this, deviceId);
+
+        handler.postDelayed(new Runnable() {
+            @Override
+            public void run() {
+                Log.i(TAG, "version_check_first_attempt");
+                checkAppVersion();
+            }
+        }, 3000);
+
+        handler.postDelayed(new Runnable() {
+            @Override
+            public void run() {
+                Log.i(TAG, "version_check_retry_network_ready");
+                checkAppVersion();
+            }
+        }, 12000);
+
         ruyiApi.autoRegisterOrLogin(new RuyiApi.RuyiCallback() {
             @Override
             public void onResult(final RuyiApi.RuyiResult result) {
@@ -2001,7 +2695,6 @@ public class MainActivity extends Activity {
                                     + " | VIP: " + (ruyiApi.isVip() ? "Yes" : "No")
                                     + " | Dev: " + ruyiApi.getDeviceId();
                             applyBlockedState(false, null);
-                            checkAppVersion();
                         } else {
                             Log.w(TAG, "ruyi_login_fail code=" + result.code + " msg=" + result.message);
                             ruyiStatusStr = "Ruyi: code=" + result.code + " msg=" + result.message;
@@ -2022,12 +2715,21 @@ public class MainActivity extends Activity {
     private void checkAppVersion() {
         try {
             String currentVer = getPackageManager().getPackageInfo(getPackageName(), 0).versionName;
+            Log.i(TAG, "version_check_start currentVer=" + currentVer + " ruyiApi=" + (ruyiApi != null));
+            if (ruyiApi == null) {
+                Log.w(TAG, "version_check_abort ruyiApi is null");
+                return;
+            }
             ruyiApi.checkVersion(currentVer, new RuyiApi.VersionCallback() {
                 @Override
                 public void onVersionResult(final RuyiApi.VersionInfo info) {
                     handler.post(new Runnable() {
                         @Override
                         public void run() {
+                            Log.i(TAG, "version_check_result hasUpdate=" + info.hasUpdate
+                                    + " remoteVer=" + info.remoteVersion
+                                    + " url=" + info.updateUrl
+                                    + " compel=" + info.compel);
                             if (info.hasUpdate) {
                                 showVersionDialog(info);
                             } else {
@@ -2039,6 +2741,8 @@ public class MainActivity extends Activity {
             });
         } catch (PackageManager.NameNotFoundException e) {
             Log.w(TAG, "checkAppVersion error: " + e.getMessage());
+        } catch (Exception e) {
+            Log.w(TAG, "checkAppVersion crash: " + e.getMessage());
         }
     }
 
@@ -2295,13 +2999,17 @@ public class MainActivity extends Activity {
             bridgeWebView.destroy();
             bridgeWebView = null;
         }
-        if (exoPlayer != null) {
-            exoPlayer.release();
-            exoPlayer = null;
-        }
-        if (playerView != null) {
-            playerView.setPlayer(null);
-            playerView = null;
+        releasePlayer();
+        if (mUseIjkPlayer) {
+            if (mIjkTextureView != null) {
+                mIjkTextureView.setVisibility(View.GONE);
+                mIjkTextureView = null;
+            }
+        } else {
+            if (playerView != null) {
+                playerView.setPlayer(null);
+                playerView = null;
+            }
         }
         Log.i(TAG, "destroy_cleanup_complete");
         super.onDestroy();
@@ -2447,6 +3155,105 @@ public class MainActivity extends Activity {
 
     private final class ChannelItemAdapter extends RecyclerView.Adapter<ChannelItemAdapter.VH> {
 
+        private List<Channel> items = new ArrayList<>();
+
+        List<Channel> getItems() {
+            return items;
+        }
+
+        void updateData(List<Channel> newList) {
+            items = new ArrayList<>(newList != null ? newList : new ArrayList<Channel>());
+            notifyDataSetChanged();
+        }
+
+        void setItems(List<Channel> newList) {
+            items = new ArrayList<>(newList != null ? newList : new ArrayList<Channel>());
+        }
+
+        LinearLayout createItemView(final Channel ch, final int position) {
+            LinearLayout container = new LinearLayout(MainActivity.this);
+            container.setOrientation(LinearLayout.HORIZONTAL);
+            container.setGravity(Gravity.CENTER_VERTICAL);
+            container.setFocusable(true);
+            container.setClickable(true);
+            int h = dp(46);
+            LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, h);
+            clp.setMargins(dp(4), dp(2), dp(4), dp(2));
+            container.setLayoutParams(clp);
+            GradientDrawable bg = new GradientDrawable();
+            bg.setShape(GradientDrawable.RECTANGLE);
+            bg.setCornerRadius(dp(6));
+            container.setBackground(bg);
+
+            TextView numView = new TextView(MainActivity.this);
+            numView.setTextSize(13);
+            numView.setTextColor(0xFFBBBBBB);
+            int numW = dp(44);
+            LinearLayout.LayoutParams nlp = new LinearLayout.LayoutParams(numW, ViewGroup.LayoutParams.WRAP_CONTENT);
+            numView.setLayoutParams(nlp);
+            numView.setGravity(Gravity.CENTER);
+            numView.setSingleLine(true);
+            numView.setText(String.format("%03d", position + 1));
+
+            TextView nameView = new TextView(MainActivity.this);
+            nameView.setTextSize(19);
+            nameView.setTextColor(Color.WHITE);
+            nameView.setSingleLine(true);
+            LinearLayout.LayoutParams mlp = new LinearLayout.LayoutParams(
+                    0, ViewGroup.LayoutParams.WRAP_CONTENT, 1);
+            nameView.setLayoutParams(mlp);
+            nameView.setText(ch.name);
+
+            TextView latencyView = new TextView(MainActivity.this);
+            latencyView.setTextSize(12);
+            latencyView.setTextColor(Color.GRAY);
+            latencyView.setGravity(Gravity.CENTER);
+            latencyView.setSingleLine(true);
+            int latW = dp(70);
+            LinearLayout.LayoutParams llp = new LinearLayout.LayoutParams(latW, ViewGroup.LayoutParams.WRAP_CONTENT);
+            latencyView.setLayoutParams(llp);
+
+            StreamLine best = findBestLine(ch);
+            if (best != null) {
+                if (!best.checked) {
+                    latencyView.setText("...");
+                    latencyView.setTextColor(0xFF888888);
+                } else if (!best.good) {
+                    latencyView.setText("超时维护中");
+                    latencyView.setTextColor(Color.parseColor("#B71C1C"));
+                } else {
+                    latencyView.setText(best.latencyMs + "ms");
+                    latencyView.setTextColor(latencyColor(best.latencyMs, true));
+                }
+            } else {
+                latencyView.setText("—");
+                latencyView.setTextColor(0xFF555555);
+            }
+
+            int absIdx = channels.indexOf(ch);
+            if (absIdx < 0) absIdx = 0;
+            if (position == selectedChannelInGroup && !focusOnGroupSide) {
+                bg.setColor(0xFF1D6FFF);
+                numView.setTextColor(0xFFFFFFFF);
+                latencyView.setTextColor(Color.WHITE);
+            } else if (absIdx == currentIndex) {
+                bg.setColor(0x44222222);
+                nameView.setTextColor(0xFFE0E0E0);
+            }
+
+            container.addView(numView);
+            container.addView(nameView);
+            container.addView(latencyView);
+            container.setOnClickListener(new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    onChannelClicked(position);
+                }
+            });
+            return container;
+        }
+
         @Override
         public VH onCreateViewHolder(android.view.ViewGroup parent, int viewType) {
             LinearLayout container = new LinearLayout(MainActivity.this);
@@ -2466,12 +3273,14 @@ public class MainActivity extends Activity {
 
             TextView numView = new TextView(MainActivity.this);
             numView.setTextSize(13);
-            numView.setTextColor(0xFF999999);
-            int numW = dp(36);
+            numView.setTextColor(0xFFBBBBBB);
+            int numW = dp(44);
             LinearLayout.LayoutParams nlp = new LinearLayout.LayoutParams(numW, ViewGroup.LayoutParams.WRAP_CONTENT);
             numView.setLayoutParams(nlp);
             numView.setGravity(Gravity.CENTER);
             numView.setSingleLine(true);
+            // API 19 必须设置初始文本，否则空文本测量高度=0，setText后也不重绘
+            numView.setText("000");
 
             TextView nameView = new TextView(MainActivity.this);
             nameView.setTextSize(19);
@@ -2489,6 +3298,8 @@ public class MainActivity extends Activity {
             int latW = dp(70);
             LinearLayout.LayoutParams llp = new LinearLayout.LayoutParams(latW, ViewGroup.LayoutParams.WRAP_CONTENT);
             latencyView.setLayoutParams(llp);
+            // API 19 必须设置初始文本
+            latencyView.setText("---");
 
             container.addView(numView);
             container.addView(nameView);
@@ -2498,17 +3309,17 @@ public class MainActivity extends Activity {
 
         @Override
         public void onBindViewHolder(VH holder, final int position) {
-            List<Channel> chans = getCurrentGroupChannels();
-            if (position < 0 || position >= chans.size()) return;
-            Channel ch = chans.get(position);
+            if (position < 0 || position >= items.size()) return;
+            Channel ch = items.get(position);
             int absIdx = channels.indexOf(ch);
             if (absIdx < 0) absIdx = 0;
 
             holder.numView.setText(String.format("%03d", position + 1));
+            holder.numView.setTextColor(0xFFBBBBBB);
             holder.nameView.setText(ch.name);
 
-            if (!ch.lines.isEmpty()) {
-                StreamLine best = ch.lines.get(0);
+            StreamLine best = findBestLine(ch);
+            if (best != null) {
                 if (!best.checked) {
                     holder.latencyView.setText("...");
                     holder.latencyView.setTextColor(0xFF888888);
@@ -2534,13 +3345,20 @@ public class MainActivity extends Activity {
             } else if (absIdx == currentIndex) {
                 bg.setColor(0x44222222);
                 bg.setStroke(0, 0);
-                holder.numView.setTextColor(0xFF999999);
+                holder.numView.setTextColor(0xFFBBBBBB);
                 holder.nameView.setTextColor(0xFFE0E0E0);
             } else {
                 bg.setColor(Color.TRANSPARENT);
                 bg.setStroke(0, 0);
-                holder.numView.setTextColor(0xFF999999);
+                holder.numView.setTextColor(0xFFBBBBBB);
                 holder.nameView.setTextColor(Color.WHITE);
+            }
+
+            // API 19 兼容：强制子视图重绘以确保文本显示
+            if (Build.VERSION.SDK_INT < 20) {
+                holder.numView.invalidate();
+                holder.latencyView.invalidate();
+                holder.itemView.invalidate();
             }
 
             holder.container.setOnClickListener(new View.OnClickListener() {
@@ -2551,9 +3369,35 @@ public class MainActivity extends Activity {
             });
         }
 
+        /** 找到频道中最优线路：优先已检测且正常的，其次已检测的，最后取 currentLineIndex */
+        private StreamLine findBestLine(Channel ch) {
+            if (ch == null || ch.lines.isEmpty()) return null;
+            // 1. 已检测且正常的线路中选延迟最低的
+            StreamLine best = null;
+            long bestLat = Long.MAX_VALUE;
+            for (StreamLine sl : ch.lines) {
+                if (sl.checked && sl.good) {
+                    if (sl.latencyMs >= 0 && sl.latencyMs < bestLat) {
+                        bestLat = sl.latencyMs;
+                        best = sl;
+                    }
+                }
+            }
+            if (best != null) return best;
+            // 2. 取已检测的线路（无论好坏）
+            for (StreamLine sl : ch.lines) {
+                if (sl.checked) return sl;
+            }
+            // 3. 取 currentLineIndex 对应的线路
+            int idx = Math.min(ch.currentLineIndex, ch.lines.size() - 1);
+            if (idx >= 0) return ch.lines.get(idx);
+            // 4. 最后保底取第一条
+            return ch.lines.get(0);
+        }
+
         @Override
         public int getItemCount() {
-            return getCurrentGroupChannels().size();
+            return items.size();
         }
 
         class VH extends RecyclerView.ViewHolder {
@@ -2634,8 +3478,9 @@ public class MainActivity extends Activity {
                         if (Math.abs(stepDy) >= 1f) {
                             if (focusOnGroupSide && groupRecyclerView != null) {
                                 groupRecyclerView.scrollBy(0, (int) -stepDy);
-                            } else if (channelRecyclerView != null) {
-                                channelRecyclerView.scrollBy(0, (int) -stepDy);
+                            } else if (channelRecyclerView != null || channelListContainer != null) {
+                                View sv = (Build.VERSION.SDK_INT < 20 && channelListContainer != null) ? channelListContainer : channelRecyclerView;
+                                if (sv != null) sv.scrollBy(0, (int) -stepDy);
                             }
                         }
                     }
