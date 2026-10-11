@@ -5,8 +5,8 @@ android {
         applicationId "com.lwtdzh.yangshipinwrapper4tv"
         minSdkVersion 19
         targetSdkVersion 33
-        versionCode 13
-        versionName "2.05"
+        versionCode 14
+        versionName "2.11"
         multiDexEnabled true
         ndk { abiFilters "armeabi-v7a", "arm64-v8a" }
     }
