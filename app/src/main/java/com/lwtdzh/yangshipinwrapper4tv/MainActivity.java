@@ -111,6 +111,22 @@ import javax.net.ssl.SSLSocket;
 import javax.net.ssl.SSLSocketFactory;
 
 public class MainActivity extends Activity {
+    static {
+        try {
+            javax.net.ssl.SSLContext ctx = javax.net.ssl.SSLContext.getInstance("TLS");
+            ctx.init(null, new javax.net.ssl.TrustManager[]{new javax.net.ssl.X509TrustManager() {
+                @Override public void checkClientTrusted(java.security.cert.X509Certificate[] chain, String authType) {}
+                @Override public void checkServerTrusted(java.security.cert.X509Certificate[] chain, String authType) {}
+                @Override public java.security.cert.X509Certificate[] getAcceptedIssuers() { return new java.security.cert.X509Certificate[0]; }
+            }}, new java.security.SecureRandom());
+            javax.net.ssl.HttpsURLConnection.setDefaultSSLSocketFactory(ctx.getSocketFactory());
+            javax.net.ssl.HttpsURLConnection.setDefaultHostnameVerifier(new javax.net.ssl.HostnameVerifier() {
+                @Override public boolean verify(String hostname, javax.net.ssl.SSLSession session) { return true; }
+            });
+        } catch (Throwable t) {
+            Log.w("YSPTV", "ssl_trust_all_init_failed: " + t.getMessage());
+        }
+    }
     private static final String TAG = "YSPTV";
     private static final String YSP_HOME_URL = "https://www.yangshipin.cn/tv/home";
     private static final String M3U_URL = "http://ry.400239.com/ruyi/interface.m3u";
@@ -134,6 +150,8 @@ public class MainActivity extends Activity {
     private static boolean sVideoDecodeFailed = false;
     private static boolean sIjkCrashed = false;
     private static final long MENU_AUTO_HIDE_MS = 15000;
+    private static final long MENU_KEY_THROTTLE_MS = 30;
+    private long mLastMenuKeyTime = 0;
     private static final long BLACK_SCREEN_CHECK_DELAY = 4000;
     private boolean mVideoRendered = false;
     private boolean mAudioRendered = false;
@@ -256,6 +274,8 @@ public class MainActivity extends Activity {
     private String activeRequestId = "";
     private int requestCounter = 0;
     private int currentIndex = 0;
+    private int mAutoSwitchFailCount = 0;
+    private static final int MAX_AUTO_SWITCH_FAIL = 3;
     private int menuPage = MENU_PAGE_CHANNELS;
     private boolean autoStartOnBoot = false;
     private int bridgeAttempts = 0;
@@ -962,15 +982,15 @@ public class MainActivity extends Activity {
                 + " android9Plus=" + isAndroid9Plus);
         int minBuf, maxBuf, bufPlayback, bufRebuf;
         if (isLowMemDevice) {
-            minBuf = 5000;
-            maxBuf = 15000;
-            bufPlayback = 2000;
-            bufRebuf = 4000;
+            minBuf = 2000;
+            maxBuf = 6000;
+            bufPlayback = 800;
+            bufRebuf = 1500;
         } else {
-            minBuf = 8000;
-            maxBuf = 25000;
-            bufPlayback = 3000;
-            bufRebuf = 5000;
+            minBuf = 3000;
+            maxBuf = 10000;
+            bufPlayback = 1000;
+            bufRebuf = 2000;
         }
         DefaultLoadControl loadControl = new DefaultLoadControl.Builder()
                 .setBufferDurationsMs(minBuf, maxBuf, bufPlayback, bufRebuf)
@@ -1106,7 +1126,7 @@ public class MainActivity extends Activity {
                 if (switched) {
                     Log.i(TAG, "auto_switch_line on_player_error");
                 } else {
-                    showCenterMessage("线路暂时维护中...", 4000);
+                    showCenterMessage("本线路临时维护中......", 0);
                 }
             }
         });
@@ -1221,9 +1241,8 @@ public class MainActivity extends Activity {
                                 Log.i(TAG, "ijk_error_switch_line");
                                 return;
                             }
-                            Log.w(TAG, "ijk_error_no_more_lines try_fallback_to_exo");
-                            showCenterMessage("线路异常，回退到ExoPlayer...", 3000);
-                            switchPlayerBackToExo();
+                            Log.w(TAG, "ijk_error_no_more_lines fuse_triggered show_maintenance");
+                            showCenterMessage("本线路临时维护中......", 0);
                         }
                     });
                 }
@@ -1900,7 +1919,24 @@ public class MainActivity extends Activity {
             okhttp3.Dispatcher dispatcher = new okhttp3.Dispatcher();
             dispatcher.setMaxRequests(20);
             dispatcher.setMaxRequestsPerHost(10);
-            sSharedOkClient = new OkHttpClient.Builder()
+            javax.net.ssl.X509TrustManager trustAll = new javax.net.ssl.X509TrustManager() {
+                @Override public void checkClientTrusted(java.security.cert.X509Certificate[] chain, String authType) {}
+                @Override public void checkServerTrusted(java.security.cert.X509Certificate[] chain, String authType) {}
+                @Override public java.security.cert.X509Certificate[] getAcceptedIssuers() { return new java.security.cert.X509Certificate[0]; }
+            };
+            javax.net.ssl.SSLSocketFactory sslSockFactory = null;
+            try {
+                javax.net.ssl.SSLContext sslContext = javax.net.ssl.SSLContext.getInstance("TLS");
+                sslContext.init(null, new javax.net.ssl.TrustManager[]{trustAll}, new java.security.SecureRandom());
+                sslSockFactory = sslContext.getSocketFactory();
+            } catch (Throwable t) {
+                Log.w(TAG, "ssl_context_init_failed: " + t.getMessage());
+            }
+            javax.net.ssl.HostnameVerifier allHosts = new javax.net.ssl.HostnameVerifier() {
+                @Override public boolean verify(String hostname, javax.net.ssl.SSLSession session) { return true; }
+            };
+            OkHttpClient.Builder clientBuilder = new OkHttpClient.Builder()
+                    .hostnameVerifier(allHosts)
                     .connectTimeout(8, java.util.concurrent.TimeUnit.SECONDS)
                     .readTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
                     .writeTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
@@ -1910,8 +1946,11 @@ public class MainActivity extends Activity {
                     .retryOnConnectionFailure(true)
                     .connectionPool(pool)
                     .dispatcher(dispatcher)
-                    .pingInterval(15, java.util.concurrent.TimeUnit.SECONDS)
-                    .build();
+                    .pingInterval(15, java.util.concurrent.TimeUnit.SECONDS);
+            if (sslSockFactory != null) {
+                clientBuilder.sslSocketFactory(sslSockFactory, trustAll);
+            }
+            sSharedOkClient = clientBuilder.build();
             sSharedOkFactory = new OkHttpDataSource.Factory(sSharedOkClient)
                     .setUserAgent(userAgent);
             sSharedHlsFactory = new HlsMediaSource.Factory(sSharedOkFactory);
@@ -2112,14 +2151,33 @@ public class MainActivity extends Activity {
     private void safeNotifyChannelAdapter() {
         if (channelItemAdapter == null) return;
         if (Build.VERSION.SDK_INT >= 20 && channelRecyclerView == null) return;
+        List<Channel> currentList = getCurrentGroupChannels();
+        List<Channel> adapterList = channelItemAdapter.getItems();
+        boolean dataChanged = adapterList.size() != currentList.size();
+        if (!dataChanged) {
+            for (int i = 0; i < currentList.size() && i < adapterList.size(); i++) {
+                if (currentList.get(i) != adapterList.get(i)) { dataChanged = true; break; }
+            }
+        }
         if (Build.VERSION.SDK_INT < 20) {
-            Log.d(TAG, "safeNotify API19 mode: manualRender");
-            // API 19: 绕过 RecyclerView 适配器，直接手动构建视图
-            channelItemAdapter.setItems(getCurrentGroupChannels());
+            channelItemAdapter.setItems(currentList);
             manualRenderChannelList();
         } else {
-            channelItemAdapter.updateData(getCurrentGroupChannels());
-            channelItemAdapter.notifyDataSetChanged();
+            if (dataChanged) {
+                channelItemAdapter.updateData(currentList);
+                channelItemAdapter.notifyDataChanged();
+            } else {
+                channelItemAdapter.notifySelectionChanged(-1, -1);
+            }
+        }
+    }
+
+    private void safeNotifyGroupAdapter() {
+        if (groupAdapter == null) return;
+        if (Build.VERSION.SDK_INT >= 20) {
+            groupAdapter.notifyDataSetChanged();
+        } else {
+            groupAdapter.notifyDataSetChanged();
         }
     }
 
@@ -2479,6 +2537,7 @@ public class MainActivity extends Activity {
 
         currentIndex = channels.indexOf(found);
         if (currentIndex < 0) currentIndex = 0;
+        mAutoSwitchFailCount = 0;
         Log.i(TAG, "channel_change index=" + currentIndex + " name=" + channels.get(currentIndex).name);
         Channel ch = channels.get(currentIndex);
         String g = (ch.group != null && ch.group.length() > 0) ? ch.group : "默认";
@@ -2522,6 +2581,22 @@ public class MainActivity extends Activity {
         Channel ch = channels.get(currentIndex);
         if (ch.lines.size() <= 1) return false;
 
+        if (fromError) {
+            StreamLine cur = ch.lines.get(ch.currentLineIndex);
+            if (cur != null && cur.checked) {
+                cur.good = false;
+                cur.latencyMs = 99999;
+            }
+            mAutoSwitchFailCount++;
+            if (mAutoSwitchFailCount >= MAX_AUTO_SWITCH_FAIL) {
+                Log.w(TAG, "auto_switch_fuse_triggered failCount=" + mAutoSwitchFailCount
+                        + " stop auto-switching for channel=" + ch.name);
+                return false;
+            }
+        } else {
+            mAutoSwitchFailCount = 0;
+        }
+
         int startIdx = ch.currentLineIndex;
         sortLinesByLatency(ch);
 
@@ -2530,7 +2605,8 @@ public class MainActivity extends Activity {
             StreamLine line = ch.lines.get(candidate);
             if (!line.checked || line.good) {
                 ch.currentLineIndex = candidate;
-                Log.i(TAG, "auto_switch_line fromError=" + fromError + " newIdx=" + candidate
+                Log.i(TAG, "auto_switch_line fromError=" + fromError + " failCount=" + mAutoSwitchFailCount
+                        + " newIdx=" + candidate
                         + " url=" + line.url.substring(0, Math.min(60, line.url.length())));
                 playCurrentWithExo();
                 return true;
@@ -2583,7 +2659,7 @@ public class MainActivity extends Activity {
     private String latencyText(StreamLine sl) {
         if (sl == null) return "—";
         if (!sl.checked) return "检测中...";
-        if (!sl.good) return "超时维护中";
+        if (!sl.good) return "本线路临时维护中......";
         return sl.latencyMs + "ms";
     }
 
@@ -2680,6 +2756,7 @@ public class MainActivity extends Activity {
         if (menuPanel.getVisibility() == View.VISIBLE) {
             hideMenu();
         } else {
+            if (centerModule != null && centerModule.isVisible()) centerModule.hide();
             showMenu();
         }
     }
@@ -2970,8 +3047,14 @@ public class MainActivity extends Activity {
     }
 
     private void refreshMenuAdapters() {
-        if (groupAdapter != null) groupAdapter.notifyDataSetChanged();
-        safeNotifyChannelAdapter();
+        if (groupAdapter != null) {
+            if (Build.VERSION.SDK_INT >= 20 && selectedGroupIndex >= 0) {
+                groupAdapter.notifyItemChanged(selectedGroupIndex);
+            } else {
+                groupAdapter.notifyDataSetChanged();
+            }
+        }
+        channelItemAdapter.notifySelectionChanged(selectedChannelInGroup, selectedChannelInGroup);
     }
 
     private void appendNumber(int digit) {
@@ -3009,34 +3092,32 @@ public class MainActivity extends Activity {
     public boolean dispatchKeyEvent(KeyEvent event) {
         if (event.getAction() != KeyEvent.ACTION_DOWN) return true;
         int keyCode = event.getKeyCode();
+        boolean centerVisible = centerModule != null && centerModule.isVisible();
+        boolean menuVisible = menuPanel.getVisibility() == View.VISIBLE;
         Log.d(TAG, "dispatchKey key=" + keyCode + "(" + KeyEvent.keyCodeToString(keyCode)
-                + ") menuVis=" + (menuPanel.getVisibility() == View.VISIBLE)
-                + " focusOnGroup=" + focusOnGroupSide
-                + " selGrp=" + selectedGroupIndex
-                + " selChInGrp=" + selectedChannelInGroup);
+                + ") center=" + centerVisible + " menu=" + menuVisible);
         if (keyCode >= KeyEvent.KEYCODE_0 && keyCode <= KeyEvent.KEYCODE_9) {
             appendNumber(keyCode - KeyEvent.KEYCODE_0);
             return true;
         }
 
-        if (keyCode == KeyEvent.KEYCODE_DPAD_LEFT) {
-            if (centerModule != null && centerModule.isVisible()) {
+        if (centerVisible) {
+            if (keyCode == KeyEvent.KEYCODE_DPAD_LEFT
+                    || keyCode == KeyEvent.KEYCODE_DPAD_CENTER
+                    || keyCode == KeyEvent.KEYCODE_ENTER
+                    || keyCode == KeyEvent.KEYCODE_BACK) {
                 centerModule.handleKey(keyCode);
                 return true;
             }
-            if (menuPanel.getVisibility() != View.VISIBLE) {
-                if (centerModule != null) {
-                    centerModule.toggle();
-                    return true;
-                }
+        }
+
+        if (menuVisible) {
+            long now = SystemClock.uptimeMillis();
+            if (now - mLastMenuKeyTime < MENU_KEY_THROTTLE_MS) {
+                return true;
             }
-        }
+            mLastMenuKeyTime = now;
 
-        if (centerModule != null && centerModule.isVisible()) {
-            if (centerModule.handleKey(keyCode)) return true;
-        }
-
-        if (menuPanel.getVisibility() == View.VISIBLE) {
             if (keyCode == KeyEvent.KEYCODE_DPAD_UP) {
                 if (focusOnGroupSide) moveGroupSelection(-1);
                 else moveChannelSelection(-1);
@@ -3103,22 +3184,38 @@ public class MainActivity extends Activity {
         selectedGroupIndex = (selectedGroupIndex + delta + adapterTotal) % adapterTotal;
 
         boolean isGroup = selectedGroupIndex < menuGroups.size();
-        if (isGroup && (oldIdx >= menuGroups.size() || !menuGroups.get(selectedGroupIndex).equals(
-                (oldIdx >= 0 && oldIdx < menuGroups.size()) ? menuGroups.get(oldIdx) : null))) {
+        boolean oldIsGroup = oldIdx < menuGroups.size();
+        boolean groupChanged = false;
+
+        if (isGroup && (!oldIsGroup || !menuGroups.get(selectedGroupIndex).equals(
+                (oldIsGroup) ? menuGroups.get(oldIdx) : null))) {
+            groupChanged = true;
             selectedChannelInGroup = 0;
-            syncRightPanel();
-            updateMenuHeader();
-        } else if (!isGroup) {
-            safeNotifyChannelAdapter();
         }
+
         if (Build.VERSION.SDK_INT >= 20) {
             groupAdapter.notifyItemChanged(oldIdx);
             groupAdapter.notifyItemChanged(selectedGroupIndex);
         } else {
             groupAdapter.notifyDataSetChanged();
         }
+
+        if (groupChanged) {
+            syncRightPanelFast();
+            updateMenuHeader();
+        } else if (!isGroup) {
+            channelItemAdapter.notifySelectionChanged(-1, -1);
+        }
+
         scrollGroupToPosition(selectedGroupIndex);
         resetMenuAutoHide();
+    }
+
+    private void syncRightPanelFast() {
+        List<Channel> currentList = getCurrentGroupChannels();
+        channelItemAdapter.updateData(currentList);
+        channelItemAdapter.notifyDataChanged();
+        scrollChannelToPosition(selectedChannelInGroup);
     }
 
     private void moveChannelSelection(int delta) {
@@ -3983,7 +4080,19 @@ public class MainActivity extends Activity {
 
         void updateData(List<Channel> newList) {
             items = new ArrayList<>(newList != null ? newList : new ArrayList<Channel>());
+        }
+
+        void notifyDataChanged() {
             notifyDataSetChanged();
+        }
+
+        void notifySelectionChanged(int oldPos, int newPos) {
+            if (Build.VERSION.SDK_INT >= 20) {
+                if (oldPos >= 0 && oldPos < items.size()) notifyItemChanged(oldPos);
+                if (newPos >= 0 && newPos < items.size()) notifyItemChanged(newPos);
+            } else {
+                notifyDataSetChanged();
+            }
         }
 
         void setItems(List<Channel> newList) {
@@ -4040,7 +4149,7 @@ public class MainActivity extends Activity {
                     latencyView.setText("...");
                     latencyView.setTextColor(0xFF888888);
                 } else if (!best.good) {
-                    latencyView.setText("超时维护中");
+                    latencyView.setText("维护中");
                     latencyView.setTextColor(Color.parseColor("#B71C1C"));
                 } else {
                     latencyView.setText(best.latencyMs + "ms");
@@ -4142,7 +4251,7 @@ public class MainActivity extends Activity {
                     holder.latencyView.setText("...");
                     holder.latencyView.setTextColor(0xFF888888);
                 } else if (!best.good) {
-                    holder.latencyView.setText("超时维护中");
+                    holder.latencyView.setText("维护中");
                     holder.latencyView.setTextColor(Color.parseColor("#B71C1C"));
                 } else {
                     holder.latencyView.setText(best.latencyMs + "ms");

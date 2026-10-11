@@ -343,14 +343,27 @@ public class CenterModule {
         productSelection = 0;
         centerOverlay.setVisibility(View.VISIBLE);
         Log.i(TAG, "center_show");
+        handler.removeCallbacks(autoCloseRunnable);
+        handler.postDelayed(autoCloseRunnable, 60000);
     }
 
     public void hide() {
         visible = false;
+        handler.removeCallbacks(autoCloseRunnable);
         hideQrDialog();
         centerOverlay.setVisibility(View.GONE);
         Log.i(TAG, "center_hide");
     }
+
+    private final Runnable autoCloseRunnable = new Runnable() {
+        @Override
+        public void run() {
+            if (visible) {
+                Log.w(TAG, "center_auto_close_timeout");
+                hide();
+            }
+        }
+    };
 
     public void toggle() {
         if (visible) hide(); else show();
