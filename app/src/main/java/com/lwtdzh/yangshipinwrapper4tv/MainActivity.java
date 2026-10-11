@@ -957,23 +957,24 @@ public class MainActivity extends Activity {
         long totalMemBytes = java.lang.Runtime.getRuntime().maxMemory();
         boolean isLowMemDevice = totalMemBytes > 0 && totalMemBytes <= 128 * 1024 * 1024;
         boolean isAndroid9Plus = Build.VERSION.SDK_INT >= 28;
+        boolean isLowMemReal = totalMemBytes > 0 && totalMemBytes <= 256 * 1024 * 1024;
         Log.i(TAG, "exo_mem_total=" + (totalMemBytes / (1024 * 1024)) + "MB lowMem=" + isLowMemDevice
                 + " android9Plus=" + isAndroid9Plus);
         int minBuf, maxBuf, bufPlayback, bufRebuf;
-        if (isAndroid9Plus) {
-            minBuf = isLowMemDevice ? 4000 : 6000;
-            maxBuf = isLowMemDevice ? 12000 : 18000;
-            bufPlayback = 1000;
-            bufRebuf = 2500;
+        if (isLowMemDevice) {
+            minBuf = 5000;
+            maxBuf = 15000;
+            bufPlayback = 2000;
+            bufRebuf = 4000;
         } else {
-            minBuf = isLowMemDevice ? 4000 : 6000;
-            maxBuf = isLowMemDevice ? 10000 : 15000;
-            bufPlayback = 1000;
-            bufRebuf = 2500;
+            minBuf = 8000;
+            maxBuf = 25000;
+            bufPlayback = 3000;
+            bufRebuf = 5000;
         }
         DefaultLoadControl loadControl = new DefaultLoadControl.Builder()
                 .setBufferDurationsMs(minBuf, maxBuf, bufPlayback, bufRebuf)
-                .setTargetBufferBytes(isLowMemDevice ? 16 * 1024 * 1024 : 32 * 1024 * 1024)
+                .setTargetBufferBytes(isLowMemReal ? 32 * 1024 * 1024 : 64 * 1024 * 1024)
                 .setPrioritizeTimeOverSizeThresholds(true)
                 .build();
         com.google.android.exoplayer2.trackselection.DefaultTrackSelector trackSelector =
@@ -1895,21 +1896,21 @@ public class MainActivity extends Activity {
         String userAgent = "Mozilla/5.0 (Linux; Android " + Build.VERSION.SDK_INT + ") AppleWebKit/537.36 Chrome/120.0 Mobile";
         if (sSharedOkClient == null) {
             java.util.concurrent.TimeUnit unit = java.util.concurrent.TimeUnit.MINUTES;
-            okhttp3.ConnectionPool pool = new okhttp3.ConnectionPool(30, 15, unit);
+            okhttp3.ConnectionPool pool = new okhttp3.ConnectionPool(20, 10, unit);
             okhttp3.Dispatcher dispatcher = new okhttp3.Dispatcher();
-            dispatcher.setMaxRequests(30);
-            dispatcher.setMaxRequestsPerHost(15);
+            dispatcher.setMaxRequests(20);
+            dispatcher.setMaxRequestsPerHost(10);
             sSharedOkClient = new OkHttpClient.Builder()
-                    .connectTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
-                    .readTimeout(180, java.util.concurrent.TimeUnit.SECONDS)
-                    .writeTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
+                    .connectTimeout(8, java.util.concurrent.TimeUnit.SECONDS)
+                    .readTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+                    .writeTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
                     .callTimeout(0, java.util.concurrent.TimeUnit.MILLISECONDS)
                     .followRedirects(true)
                     .followSslRedirects(true)
                     .retryOnConnectionFailure(true)
                     .connectionPool(pool)
                     .dispatcher(dispatcher)
-                    .pingInterval(30, java.util.concurrent.TimeUnit.SECONDS)
+                    .pingInterval(15, java.util.concurrent.TimeUnit.SECONDS)
                     .build();
             sSharedOkFactory = new OkHttpDataSource.Factory(sSharedOkClient)
                     .setUserAgent(userAgent);

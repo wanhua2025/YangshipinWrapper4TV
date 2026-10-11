@@ -301,28 +301,41 @@ public class IjkPlayerHelper {
         try {
             mp.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "framedrop", 1);
             mp.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "enable-accurate-seek", 0);
-            mp.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "max_cached_duration", 5000);
+            mp.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "max_cached_duration", 3000);
             mp.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "min-frames", 1);
             mp.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "soundtouch", 1);
             mp.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "mediacodec", 1);
             mp.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "mediacodec-auto-rotate", 1);
             mp.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "mediacodec-handle-resolution-change", 1);
             mp.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "opensles", 0);
+            mp.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "skip_loop_filter", 48);
+            mp.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "skip_frame", 1);
+            mp.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "avioflags", "direct");
+            mp.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "sync", "audio");
+            mp.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "max-fps", 30);
 
-            mp.setOption(IjkMediaPlayer.OPT_CATEGORY_CODEC, "threads", "2");
+            int cpuCount = Runtime.getRuntime().availableProcessors();
+            int codecThreads = Math.max(2, Math.min(4, cpuCount));
+            mp.setOption(IjkMediaPlayer.OPT_CATEGORY_CODEC, "threads", String.valueOf(codecThreads));
+            mp.setOption(IjkMediaPlayer.OPT_CATEGORY_CODEC, "skip_frame", 1);
+            mp.setOption(IjkMediaPlayer.OPT_CATEGORY_CODEC, "skip_loop_filter", 48);
+            mp.setOption(IjkMediaPlayer.OPT_CATEGORY_CODEC, "low-power", 1);
 
             mp.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "flush_packets", 1);
             mp.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "safe", 0);
-            mp.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "dns_cache_clear", 1);
-            mp.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "dns_cache_timeout", -1);
-            mp.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "infbuf", 1);
-            mp.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "max-buffer-size", 32 * 1024 * 1024);
-            mp.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "probesize", 128 * 1000);
-            mp.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "analyzeduration", 500 * 1000);
+            mp.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "infbuf", 0);
+            mp.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "max-buffer-size", 8 * 1024 * 1024);
+            mp.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "probesize", 32 * 1000);
+            mp.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "analyzeduration", 200 * 1000);
             mp.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "reconnect", 1);
             mp.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "reconnect_streamed", 1);
-            mp.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "timeout", 30 * 1000 * 1000);
+            mp.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "timeout", 10 * 1000 * 1000);
             mp.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "rtsp_transport", "tcp");
+            mp.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "dns_cache_timeout", 60 * 1000 * 1000L);
+            mp.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "dns_cache_clear", 0);
+            mp.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "fflags", "nobuffer");
+            mp.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "flags", "low_delay");
+            mp.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "packet-buffering", 0);
         } catch (Throwable th) {
             th.printStackTrace();
         }
