@@ -2045,6 +2045,69 @@ public class MainActivity extends Activity {
         }, "ChannelDetectAsync").start();
     }
 
+    private void detectSingleChannelLines(final Channel ch, final boolean refreshOverlay) {
+        if (ch == null || ch.lines.isEmpty()) return;
+        boolean allChecked = true;
+        for (StreamLine sl : ch.lines) {
+            if (!sl.checked) { allChecked = false; break; }
+        }
+        if (allChecked) return;
+
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                for (final StreamLine sl : ch.lines) {
+                    if (sl.checked) continue;
+                    try {
+                        long start = System.currentTimeMillis();
+                        HttpURLConnection conn = (HttpURLConnection) new URL(sl.url).openConnection();
+                        conn.setConnectTimeout(3000);
+                        conn.setReadTimeout(3000);
+                        conn.setRequestMethod("HEAD");
+                        conn.setInstanceFollowRedirects(true);
+                        conn.setRequestProperty("User-Agent", "Mozilla/5.0");
+                        int code = conn.getResponseCode();
+                        conn.disconnect();
+                        if (code == 405) {
+                            HttpURLConnection conn2 = (HttpURLConnection) new URL(sl.url).openConnection();
+                            conn2.setConnectTimeout(3000);
+                            conn2.setReadTimeout(3000);
+                            conn2.setRequestMethod("GET");
+                            conn2.setInstanceFollowRedirects(true);
+                            conn2.setRequestProperty("User-Agent", "Mozilla/5.0");
+                            conn2.setRequestProperty("Range", "bytes=0-0");
+                            code = conn2.getResponseCode();
+                            conn2.disconnect();
+                        }
+                        long latency = System.currentTimeMillis() - start;
+                        if (code >= 400) {
+                            sl.good = false;
+                            sl.latencyMs = 99999;
+                        } else {
+                            sl.good = true;
+                            sl.latencyMs = latency;
+                        }
+                    } catch (Exception e) {
+                        sl.good = false;
+                        sl.latencyMs = 99999;
+                    } finally {
+                        sl.checked = true;
+                    }
+                }
+                handler.post(new Runnable() {
+                    @Override
+                    public void run() {
+                        safeNotifyChannelAdapter();
+                        groupAdapter.notifyDataSetChanged();
+                        updateStatus();
+                        if (refreshOverlay) {
+                            showPlaybackOverlay();
+                        }
+                    }
+                });
+            }
+        }, "SingleChDetect").start();
+    }
 
     private void safeNotifyChannelAdapter() {
         if (channelItemAdapter == null) return;
@@ -2425,6 +2488,7 @@ public class MainActivity extends Activity {
         groupAdapter.notifyDataSetChanged();
         safeNotifyChannelAdapter();
         requestCurrentStream("channel");
+        detectSingleChannelLines(ch, true);
     }
 
     private boolean isChannelPlayable(Channel nc) {
@@ -2450,6 +2514,7 @@ public class MainActivity extends Activity {
         showOverlay(buildColoredLatencySpan(prefix, line), true);
         Log.i(TAG, "switch_line channel=" + ch.name + " line=" + (ch.currentLineIndex + 1) + "/" + ch.lines.size());
         playCurrentWithExo();
+        detectSingleChannelLines(ch, false);
     }
 
     private boolean switchToNextLine(boolean fromError) {
