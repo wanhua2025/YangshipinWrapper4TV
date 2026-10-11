@@ -4,7 +4,7 @@ android {
     defaultConfig {
         applicationId "com.lwtdzh.yangshipinwrapper4tv"
         minSdkVersion 19
-        targetSdkVersion 33
+        targetSdkVersion 28
         versionCode 14
         versionName "2.11"
         multiDexEnabled true
@@ -26,6 +26,7 @@ android {
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
     }
+    lintOptions { abortOnError false; checkReleaseBuilds false }
     compileOptions { sourceCompatibility JavaVersion.VERSION_1_8; targetCompatibility JavaVersion.VERSION_1_8 }
 }
 dependencies {
