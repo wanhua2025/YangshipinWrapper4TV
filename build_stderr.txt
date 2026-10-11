@@ -1,0 +1,1831 @@
+Set-Location : 找
+不到路径“E:\Yang
+shipinWrapper4TV-
+main20260926瀹岀
+編鐗圽YangshipinW
+rapper4TV-main”
+，因为该路径不存
+在。
+所在位置 E:\Yangs
+hipinWrapper4TV-m
+ain20260926完美版
+\YangshipinWrappe
+r4TV-main\do_buil
+d.ps1:2 字符: 1
++ Set-Location "e
+:\YangshipinWrapp
+er4TV-main2026092
+6瀹岀編鐗圽Yangsh
+ipinWrap ...
++ ~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~
+~~~
+    + CategoryIn 
+   fo            
+  : ObjectNotF   
+ ound: (E:\Ya    
+ngshipinWr..    .
+Wrapper4TV-    ma
+in:String)     [S
+et-Locati    on],
+ ItemNot    Found
+Excepti    on
+    + FullyQuali 
+   fiedErrorId   
+  : PathNotFou   
+ nd,Microsoft    
+.PowerShell.    C
+ommands.Set    Lo
+cationComm    and
+ 
+gradlew.bat : E:\
+YangshipinWrapper
+4TV-main20260926
+完美版\Yangshipin
+Wrapper4TV-main\a
+pp\src\main\java\
+com\lwtdzh\yangsh
+ipinwrapper4tv\Ij
+kPlayerHelper.jav
+a:93: 错误: <匿名
+com.lwtdzh.yangsh
+ipinwrapper4tv.Ij
+kPlayerHelper$2>
+不是抽象的, 并且
+未覆盖OnPreparedL
+istener中的抽象方
+法onPrepared(IMed
+iaPlayer)
+所在位置 E:\Yangs
+hipinWrapper4TV-m
+ain20260926完美版
+\YangshipinWrappe
+r4TV-main\do_buil
+d.ps1:8 字符: 1
++ & ".\gradlew.ba
+t" clean assemble
+Release --stacktr
+ace 2>&1 | Tee-Ob
+jec ...
++ ~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~
+~~~~~~~~
+    + CategoryIn 
+   fo            
+  : NotSpecifi   
+ ed: (E:\Yang    
+shipinWr...d    (
+IMediaPlaye    r)
+:String) [    ], 
+RemoteExc    epti
+on
+    + FullyQuali 
+   fiedErrorId   
+  : NativeComm   
+ andError
+ 
+            mNati
+vePlayer.setOnPre
+paredListener(new
+ IjkMediaPlayer.O
+nPreparedListener
+() {
+                 
+                 
+                 
+                 
+                 
+   ^
+E:\YangshipinWrap
+per4TV-main202609
+26完美版\Yangship
+inWrapper4TV-main
+\app\src\main\jav
+a\com\lwtdzh\yang
+shipinwrapper4tv\
+IjkPlayerHelper.j
+ava:94: 错误: 方
+法不会覆盖或实现
+超类型的方法
+                @
+Override
+                ^
+E:\YangshipinWrap
+per4TV-main202609
+26完美版\Yangship
+inWrapper4TV-main
+\app\src\main\jav
+a\com\lwtdzh\yang
+shipinwrapper4tv\
+IjkPlayerHelper.j
+ava:100: 错误: <
+匿名com.lwtdzh.ya
+ngshipinwrapper4t
+v.IjkPlayerHelper
+$3>不是抽象的, 并
+且未覆盖OnErrorLi
+stener中的抽象方
+法onError(IMediaP
+layer,int,int)
+            mNati
+vePlayer.setOnErr
+orListener(new Ij
+kMediaPlayer.OnEr
+rorListener() {
+                 
+                 
+                 
+                 
+              ^
+E:\YangshipinWrap
+per4TV-main202609
+26完美版\Yangship
+inWrapper4TV-main
+\app\src\main\jav
+a\com\lwtdzh\yang
+shipinwrapper4tv\
+IjkPlayerHelper.j
+ava:101: 错误: 方
+法不会覆盖或实现
+超类型的方法
+                @
+Override
+                ^
+E:\YangshipinWrap
+per4TV-main202609
+26完美版\Yangship
+inWrapper4TV-main
+\app\src\main\jav
+a\com\lwtdzh\yang
+shipinwrapper4tv\
+IjkPlayerHelper.j
+ava:107: 错误: <
+匿名com.lwtdzh.ya
+ngshipinwrapper4t
+v.IjkPlayerHelper
+$4>不是抽象的, 并
+且未覆盖OnInfoLis
+tener中的抽象方法
+onInfo(IMediaPlay
+er,int,int)
+            mNati
+vePlayer.setOnInf
+oListener(new Ijk
+MediaPlayer.OnInf
+oListener() {
+                 
+                 
+                 
+                 
+            ^
+E:\YangshipinWrap
+per4TV-main202609
+26完美版\Yangship
+inWrapper4TV-main
+\app\src\main\jav
+a\com\lwtdzh\yang
+shipinwrapper4tv\
+IjkPlayerHelper.j
+ava:108: 错误: 方
+法不会覆盖或实现
+超类型的方法
+                @
+Override
+                ^
+E:\YangshipinWrap
+per4TV-main202609
+26完美版\Yangship
+inWrapper4TV-main
+\app\src\main\jav
+a\com\lwtdzh\yang
+shipinwrapper4tv\
+IjkPlayerHelper.j
+ava:114: 错误: <
+匿名com.lwtdzh.ya
+ngshipinwrapper4t
+v.IjkPlayerHelper
+$5>不是抽象的, 并
+且未覆盖OnComplet
+ionListener中的抽
+象方法onCompletio
+n(IMediaPlayer)
+            mNati
+vePlayer.setOnCom
+pletionListener(n
+ew IjkMediaPlayer
+.OnCompletionList
+ener() {
+                 
+                 
+                 
+                 
+                 
+       ^
+E:\YangshipinWrap
+per4TV-main202609
+26完美版\Yangship
+inWrapper4TV-main
+\app\src\main\jav
+a\com\lwtdzh\yang
+shipinwrapper4tv\
+IjkPlayerHelper.j
+ava:115: 错误: 方
+法不会覆盖或实现
+超类型的方法
+                @
+Override
+                ^
+E:\YangshipinWrap
+per4TV-main202609
+26完美版\Yangship
+inWrapper4TV-main
+\app\src\main\jav
+a\com\lwtdzh\yang
+shipinwrapper4tv\
+IjkPlayerHelper.j
+ava:120: 错误: <
+匿名com.lwtdzh.ya
+ngshipinwrapper4t
+v.IjkPlayerHelper
+$6>不是抽象的, 并
+且未覆盖OnVideoSi
+zeChangedListener
+中的抽象方法onVid
+eoSizeChanged(IMe
+diaPlayer,int,int
+,int,int)
+            mNati
+vePlayer.setOnVid
+eoSizeChangedList
+ener(new IjkMedia
+Player.OnVideoSiz
+eChangedListener(
+) {
+                 
+                 
+                 
+                 
+                 
+                 
+  ^
+E:\YangshipinWrap
+per4TV-main202609
+26完美版\Yangship
+inWrapper4TV-main
+\app\src\main\jav
+a\com\lwtdzh\yang
+shipinwrapper4tv\
+IjkPlayerHelper.j
+ava:121: 错误: 方
+法不会覆盖或实现
+超类型的方法
+                @
+Override
+                ^
+E:\YangshipinWrap
+per4TV-main202609
+26完美版\Yangship
+inWrapper4TV-main
+\app\src\main\jav
+a\com\lwtdzh\yang
+shipinwrapper4tv\
+IjkPlayerHelper.j
+ava:323: 错误: 找
+不到符号
+            mp.se
+tOption(IjkMediaP
+layer.OPT_CATEGOR
+Y_VIDEO, "mediaco
+dec", 1);
+                 
+                 
+     ^
+  符号:   变量 OP
+T_CATEGORY_VIDEO
+  位置: 类 IjkMed
+iaPlayer
+E:\YangshipinWrap
+per4TV-main202609
+26完美版\Yangship
+inWrapper4TV-main
+\app\src\main\jav
+a\com\lwtdzh\yang
+shipinwrapper4tv\
+IjkPlayerHelper.j
+ava:324: 错误: 找
+不到符号
+            mp.se
+tOption(IjkMediaP
+layer.OPT_CATEGOR
+Y_VIDEO, "mediaco
+dec-auto-rotate",
+ 1);
+                 
+                 
+     ^
+  符号:   变量 OP
+T_CATEGORY_VIDEO
+  位置: 类 IjkMed
+iaPlayer
+E:\YangshipinWrap
+per4TV-main202609
+26完美版\Yangship
+inWrapper4TV-main
+\app\src\main\jav
+a\com\lwtdzh\yang
+shipinwrapper4tv\
+IjkPlayerHelper.j
+ava:325: 错误: 找
+不到符号
+            mp.se
+tOption(IjkMediaP
+layer.OPT_CATEGOR
+Y_VIDEO, "mediaco
+dec-handle-resolu
+tion-change", 1);
+                 
+                 
+     ^
+  符号:   变量 OP
+T_CATEGORY_VIDEO
+  位置: 类 IjkMed
+iaPlayer
+E:\YangshipinWrap
+per4TV-main202609
+26完美版\Yangship
+inWrapper4TV-main
+\app\src\main\jav
+a\com\lwtdzh\yang
+shipinwrapper4tv\
+IjkPlayerHelper.j
+ava:326: 错误: 找
+不到符号
+            mp.se
+tOption(IjkMediaP
+layer.OPT_CATEGOR
+Y_VIDEO, "opensle
+s", 0);
+                 
+                 
+     ^
+  符号:   变量 OP
+T_CATEGORY_VIDEO
+  位置: 类 IjkMed
+iaPlayer
+E:\YangshipinWrap
+per4TV-main202609
+26完美版\Yangship
+inWrapper4TV-main
+\app\src\main\jav
+a\com\lwtdzh\yang
+shipinwrapper4tv\
+IjkPlayerHelper.j
+ava:328: 错误: 找
+不到符号
+            mp.se
+tOption(IjkMediaP
+layer.OPT_CATEGOR
+Y_AUDIO, "opensle
+s", 0);
+                 
+                 
+     ^
+  符号:   变量 OP
+T_CATEGORY_AUDIO
+  位置: 类 IjkMed
+iaPlayer
+E:\YangshipinWrap
+per4TV-main202609
+26完美版\Yangship
+inWrapper4TV-main
+\app\src\main\jav
+a\com\lwtdzh\yang
+shipinwrapper4tv\
+MainActivity.java
+:1208: 错误: 找不
+到符号
+                 
+       int lowLat
+ency = android.me
+dia.MediaCodec.ME
+DIA_PERFORMANCE_M
+ODE_LOW_LATENCY;
+                 
+                 
+                 
+              ^
+  符号:   变量 ME
+DIA_PERFORMANCE_M
+ODE_LOW_LATENCY
+  位置: 类 MediaC
+odec
+E:\YangshipinWrap
+per4TV-main202609
+26完美版\Yangship
+inWrapper4TV-main
+\app\src\main\jav
+a\com\lwtdzh\yang
+shipinwrapper4tv\
+MainActivity.java
+:1210: 错误: 找不
+到符号
+                 
+           ((andr
+oid.media.MediaCo
+dec) codec).setPe
+rformanceMode(low
+Latency);
+                 
+                 
+                 
+           ^
+  符号:   方法 se
+tPerformanceMode(
+int)
+  位置: 类 MediaC
+odec
+E:\YangshipinWrap
+per4TV-main202609
+26完美版\Yangship
+inWrapper4TV-main
+\app\src\main\jav
+a\com\lwtdzh\yang
+shipinwrapper4tv\
+MainActivity.java
+:1216: 错误: 找不
+到符号
+                 
+                 
+      android.med
+ia.MediaCodec.MED
+IA_PERFORMANCE_MO
+DE_POWER_SAVING);
+                 
+                 
+                 
+             ^
+  符号:   变量 ME
+DIA_PERFORMANCE_M
+ODE_POWER_SAVING
+  位置: 类 MediaC
+odec
+注: 某些输入文件
+使用或覆盖了已过
+时的 API。
+注: 有关详细信息,
+ 请使用 -Xlint:de
+precation 重新编
+译。
+18 个错误
+FAILURE: Build fa
+iled with an exce
+ption.
+* What went wrong
+:
+Execution failed 
+for task ':app:co
+mpileReleaseJavaW
+ithJavac'.
+> Compilation fai
+led; see the comp
+iler error output
+ for details.
+* Try:
+> Run with --info
+ or --debug optio
+n to get more log
+ output.
+> Run with --scan
+ to get full insi
+ghts.
+* Exception is:
+org.gradle.api.ta
+sks.TaskExecution
+Exception: Execut
+ion failed for ta
+sk ':app:compileR
+eleaseJavaWithJav
+ac'.
+	at org.gradle.ap
+i.internal.tasks.
+execution.Execute
+ActionsTaskExecut
+er.lambda$execute
+IfValid$1(Execute
+ActionsTaskExecut
+er.java:147)
+	at org.gradle.in
+ternal.Try$Failur
+e.ifSuccessfulOrE
+lse(Try.java:282)
+	at org.gradle.ap
+i.internal.tasks.
+execution.Execute
+ActionsTaskExecut
+er.executeIfValid
+(ExecuteActionsTa
+skExecuter.java:1
+45)
+	at org.gradle.ap
+i.internal.tasks.
+execution.Execute
+ActionsTaskExecut
+er.execute(Execut
+eActionsTaskExecu
+ter.java:133)
+	at org.gradle.ap
+i.internal.tasks.
+execution.Cleanup
+StaleOutputsExecu
+ter.execute(Clean
+upStaleOutputsExe
+cuter.java:77)
+	at org.gradle.ap
+i.internal.tasks.
+execution.Finaliz
+ePropertiesTaskEx
+ecuter.execute(Fi
+nalizePropertiesT
+askExecuter.java:
+46)
+	at org.gradle.ap
+i.internal.tasks.
+execution.Resolve
+TaskExecutionMode
+Executer.execute(
+ResolveTaskExecut
+ionModeExecuter.j
+ava:51)
+	at org.gradle.ap
+i.internal.tasks.
+execution.SkipTas
+kWithNoActionsExe
+cuter.execute(Ski
+pTaskWithNoAction
+sExecuter.java:57
+)
+	at org.gradle.ap
+i.internal.tasks.
+execution.SkipOnl
+yIfTaskExecuter.e
+xecute(SkipOnlyIf
+TaskExecuter.java
+:56)
+	at org.gradle.ap
+i.internal.tasks.
+execution.CatchEx
+ceptionTaskExecut
+er.execute(CatchE
+xceptionTaskExecu
+ter.java:36)
+	at org.gradle.ap
+i.internal.tasks.
+execution.EventFi
+ringTaskExecuter$
+1.executeTask(Eve
+ntFiringTaskExecu
+ter.java:77)
+	at org.gradle.ap
+i.internal.tasks.
+execution.EventFi
+ringTaskExecuter$
+1.call(EventFirin
+gTaskExecuter.jav
+a:55)
+	at org.gradle.ap
+i.internal.tasks.
+execution.EventFi
+ringTaskExecuter$
+1.call(EventFirin
+gTaskExecuter.jav
+a:52)
+	at org.gradle.in
+ternal.operations
+.DefaultBuildOper
+ationRunner$Calla
+bleBuildOperation
+Worker.execute(De
+faultBuildOperati
+onRunner.java:204
+)
+	at org.gradle.in
+ternal.operations
+.DefaultBuildOper
+ationRunner$Calla
+bleBuildOperation
+Worker.execute(De
+faultBuildOperati
+onRunner.java:199
+)
+	at org.gradle.in
+ternal.operations
+.DefaultBuildOper
+ationRunner$2.exe
+cute(DefaultBuild
+OperationRunner.j
+ava:66)
+	at org.gradle.in
+ternal.operations
+.DefaultBuildOper
+ationRunner$2.exe
+cute(DefaultBuild
+OperationRunner.j
+ava:59)
+	at org.gradle.in
+ternal.operations
+.DefaultBuildOper
+ationRunner.execu
+te(DefaultBuildOp
+erationRunner.jav
+a:157)
+	at org.gradle.in
+ternal.operations
+.DefaultBuildOper
+ationRunner.execu
+te(DefaultBuildOp
+erationRunner.jav
+a:59)
+	at org.gradle.in
+ternal.operations
+.DefaultBuildOper
+ationRunner.call(
+DefaultBuildOpera
+tionRunner.java:5
+3)
+	at org.gradle.in
+ternal.operations
+.DefaultBuildOper
+ationExecutor.cal
+l(DefaultBuildOpe
+rationExecutor.ja
+va:73)
+	at org.gradle.ap
+i.internal.tasks.
+execution.EventFi
+ringTaskExecuter.
+execute(EventFiri
+ngTaskExecuter.ja
+va:52)
+	at org.gradle.ex
+ecution.plan.Loca
+lTaskNodeExecutor
+.execute(LocalTas
+kNodeExecutor.jav
+a:74)
+	at org.gradle.ex
+ecution.taskgraph
+.DefaultTaskExecu
+tionGraph$InvokeN
+odeExecutorsActio
+n.execute(Default
+TaskExecutionGrap
+h.java:333)
+	at org.gradle.ex
+ecution.taskgraph
+.DefaultTaskExecu
+tionGraph$InvokeN
+odeExecutorsActio
+n.execute(Default
+TaskExecutionGrap
+h.java:320)
+	at org.gradle.ex
+ecution.taskgraph
+.DefaultTaskExecu
+tionGraph$BuildOp
+erationAwareExecu
+tionAction.execut
+e(DefaultTaskExec
+utionGraph.java:3
+13)
+	at org.gradle.ex
+ecution.taskgraph
+.DefaultTaskExecu
+tionGraph$BuildOp
+erationAwareExecu
+tionAction.execut
+e(DefaultTaskExec
+utionGraph.java:2
+99)
+	at org.gradle.ex
+ecution.plan.Defa
+ultPlanExecutor$E
+xecutorWorker.lam
+bda$run$0(Default
+PlanExecutor.java
+:143)
+	at org.gradle.ex
+ecution.plan.Defa
+ultPlanExecutor$E
+xecutorWorker.exe
+cute(DefaultPlanE
+xecutor.java:227)
+	at org.gradle.ex
+ecution.plan.Defa
+ultPlanExecutor$E
+xecutorWorker.exe
+cuteNextNode(Defa
+ultPlanExecutor.j
+ava:218)
+	at org.gradle.ex
+ecution.plan.Defa
+ultPlanExecutor$E
+xecutorWorker.run
+(DefaultPlanExecu
+tor.java:140)
+	at org.gradle.in
+ternal.concurrent
+.ExecutorPolicy$C
+atchAndRecordFail
+ures.onExecute(Ex
+ecutorPolicy.java
+:64)
+	at org.gradle.in
+ternal.concurrent
+.ManagedExecutorI
+mpl$1.run(Managed
+ExecutorImpl.java
+:48)
+Caused by: org.gr
+adle.api.internal
+.tasks.compile.Co
+mpilationFailedEx
+ception: Compilat
+ion failed; see t
+he compiler error
+ output for detai
+ls.
+	at org.gradle.ap
+i.internal.tasks.
+compile.JdkJavaCo
+mpiler.execute(Jd
+kJavaCompiler.jav
+a:56)
+	at org.gradle.ap
+i.internal.tasks.
+compile.JdkJavaCo
+mpiler.execute(Jd
+kJavaCompiler.jav
+a:39)
+	at org.gradle.ap
+i.internal.tasks.
+compile.Normalizi
+ngJavaCompiler.de
+legateAndHandleEr
+rors(NormalizingJ
+avaCompiler.java:
+97)
+	at org.gradle.ap
+i.internal.tasks.
+compile.Normalizi
+ngJavaCompiler.ex
+ecute(Normalizing
+JavaCompiler.java
+:51)
+	at org.gradle.ap
+i.internal.tasks.
+compile.Normalizi
+ngJavaCompiler.ex
+ecute(Normalizing
+JavaCompiler.java
+:37)
+	at org.gradle.ap
+i.internal.tasks.
+compile.Annotatio
+nProcessorDiscove
+ringCompiler.exec
+ute(AnnotationPro
+cessorDiscovering
+Compiler.java:51)
+	at org.gradle.ap
+i.internal.tasks.
+compile.Annotatio
+nProcessorDiscove
+ringCompiler.exec
+ute(AnnotationPro
+cessorDiscovering
+Compiler.java:37)
+	at org.gradle.ap
+i.internal.tasks.
+compile.ModuleApp
+licationNameWriti
+ngCompiler.execut
+e(ModuleApplicati
+onNameWritingComp
+iler.java:46)
+	at org.gradle.ap
+i.internal.tasks.
+compile.ModuleApp
+licationNameWriti
+ngCompiler.execut
+e(ModuleApplicati
+onNameWritingComp
+iler.java:36)
+	at org.gradle.jv
+m.toolchain.inter
+nal.DefaultToolch
+ainJavaCompiler.e
+xecute(DefaultToo
+lchainJavaCompile
+r.java:57)
+	at org.gradle.ap
+i.tasks.compile.J
+avaCompile.lambda
+$createToolchainC
+ompiler$1(JavaCom
+pile.java:232)
+	at org.gradle.ap
+i.internal.tasks.
+compile.CleaningJ
+avaCompiler.execu
+te(CleaningJavaCo
+mpiler.java:53)
+	at org.gradle.ap
+i.internal.tasks.
+compile.increment
+al.IncrementalCom
+pilerFactory.lamb
+da$createRebuildA
+llCompiler$0(Incr
+ementalCompilerFa
+ctory.java:52)
+	at org.gradle.ap
+i.internal.tasks.
+compile.increment
+al.SelectiveCompi
+ler.execute(Selec
+tiveCompiler.java
+:67)
+	at org.gradle.ap
+i.internal.tasks.
+compile.increment
+al.SelectiveCompi
+ler.execute(Selec
+tiveCompiler.java
+:41)
+	at org.gradle.ap
+i.internal.tasks.
+compile.increment
+al.IncrementalRes
+ultStoringCompile
+r.execute(Increme
+ntalResultStoring
+Compiler.java:66)
+	at org.gradle.ap
+i.internal.tasks.
+compile.increment
+al.IncrementalRes
+ultStoringCompile
+r.execute(Increme
+ntalResultStoring
+Compiler.java:52)
+	at org.gradle.ap
+i.internal.tasks.
+compile.CompileJa
+vaBuildOperationR
+eportingCompiler$
+2.call(CompileJav
+aBuildOperationRe
+portingCompiler.j
+ava:59)
+	at org.gradle.ap
+i.internal.tasks.
+compile.CompileJa
+vaBuildOperationR
+eportingCompiler$
+2.call(CompileJav
+aBuildOperationRe
+portingCompiler.j
+ava:51)
+	at org.gradle.in
+ternal.operations
+.DefaultBuildOper
+ationRunner$Calla
+bleBuildOperation
+Worker.execute(De
+faultBuildOperati
+onRunner.java:204
+)
+	at org.gradle.in
+ternal.operations
+.DefaultBuildOper
+ationRunner$Calla
+bleBuildOperation
+Worker.execute(De
+faultBuildOperati
+onRunner.java:199
+)
+	at org.gradle.in
+ternal.operations
+.DefaultBuildOper
+ationRunner$2.exe
+cute(DefaultBuild
+OperationRunner.j
+ava:66)
+	at org.gradle.in
+ternal.operations
+.DefaultBuildOper
+ationRunner$2.exe
+cute(DefaultBuild
+OperationRunner.j
+ava:59)
+	at org.gradle.in
+ternal.operations
+.DefaultBuildOper
+ationRunner.execu
+te(DefaultBuildOp
+erationRunner.jav
+a:157)
+	at org.gradle.in
+ternal.operations
+.DefaultBuildOper
+ationRunner.execu
+te(DefaultBuildOp
+erationRunner.jav
+a:59)
+	at org.gradle.in
+ternal.operations
+.DefaultBuildOper
+ationRunner.call(
+DefaultBuildOpera
+tionRunner.java:5
+3)
+	at org.gradle.in
+ternal.operations
+.DefaultBuildOper
+ationExecutor.cal
+l(DefaultBuildOpe
+rationExecutor.ja
+va:73)
+	at org.gradle.ap
+i.internal.tasks.
+compile.CompileJa
+vaBuildOperationR
+eportingCompiler.
+execute(CompileJa
+vaBuildOperationR
+eportingCompiler.
+java:51)
+	at org.gradle.ap
+i.tasks.compile.J
+avaCompile.perfor
+mCompilation(Java
+Compile.java:279)
+	at org.gradle.ap
+i.tasks.compile.J
+avaCompile.perfor
+mIncrementalCompi
+lation(JavaCompil
+e.java:165)
+	at org.gradle.ap
+i.tasks.compile.J
+avaCompile.compil
+e(JavaCompile.jav
+a:146)
+	at java.base/jdk
+.internal.reflect
+.NativeMethodAcce
+ssorImpl.invoke0(
+Native Method)
+	at java.base/jdk
+.internal.reflect
+.NativeMethodAcce
+ssorImpl.invoke(N
+ativeMethodAccess
+orImpl.java:77)
+	at java.base/jdk
+.internal.reflect
+.DelegatingMethod
+AccessorImpl.invo
+ke(DelegatingMeth
+odAccessorImpl.ja
+va:43)
+	at org.gradle.in
+ternal.reflect.Ja
+vaMethod.invoke(J
+avaMethod.java:10
+4)
+	at org.gradle.ap
+i.internal.projec
+t.taskfactory.Inc
+rementalInputsTas
+kAction.doExecute
+(IncrementalInput
+sTaskAction.java:
+32)
+	at org.gradle.ap
+i.internal.projec
+t.taskfactory.Sta
+ndardTaskAction.e
+xecute(StandardTa
+skAction.java:51)
+	at org.gradle.ap
+i.internal.projec
+t.taskfactory.Abs
+tractIncrementalT
+askAction.execute
+(AbstractIncremen
+talTaskAction.jav
+a:25)
+	at org.gradle.ap
+i.internal.projec
+t.taskfactory.Sta
+ndardTaskAction.e
+xecute(StandardTa
+skAction.java:29)
+	at org.gradle.ap
+i.internal.tasks.
+execution.TaskExe
+cution$3.run(Task
+Execution.java:24
+2)
+	at org.gradle.in
+ternal.operations
+.DefaultBuildOper
+ationRunner$1.exe
+cute(DefaultBuild
+OperationRunner.j
+ava:29)
+	at org.gradle.in
+ternal.operations
+.DefaultBuildOper
+ationRunner$1.exe
+cute(DefaultBuild
+OperationRunner.j
+ava:26)
+	at org.gradle.in
+ternal.operations
+.DefaultBuildOper
+ationRunner$2.exe
+cute(DefaultBuild
+OperationRunner.j
+ava:66)
+	at org.gradle.in
+ternal.operations
+.DefaultBuildOper
+ationRunner$2.exe
+cute(DefaultBuild
+OperationRunner.j
+ava:59)
+	at org.gradle.in
+ternal.operations
+.DefaultBuildOper
+ationRunner.execu
+te(DefaultBuildOp
+erationRunner.jav
+a:157)
+	at org.gradle.in
+ternal.operations
+.DefaultBuildOper
+ationRunner.execu
+te(DefaultBuildOp
+erationRunner.jav
+a:59)
+	at org.gradle.in
+ternal.operations
+.DefaultBuildOper
+ationRunner.run(D
+efaultBuildOperat
+ionRunner.java:47
+)
+	at org.gradle.in
+ternal.operations
+.DefaultBuildOper
+ationExecutor.run
+(DefaultBuildOper
+ationExecutor.jav
+a:68)
+	at org.gradle.ap
+i.internal.tasks.
+execution.TaskExe
+cution.executeAct
+ion(TaskExecution
+.java:227)
+	at org.gradle.ap
+i.internal.tasks.
+execution.TaskExe
+cution.executeAct
+ions(TaskExecutio
+n.java:210)
+	at org.gradle.ap
+i.internal.tasks.
+execution.TaskExe
+cution.executeWit
+hPreviousOutputFi
+les(TaskExecution
+.java:193)
+	at org.gradle.ap
+i.internal.tasks.
+execution.TaskExe
+cution.execute(Ta
+skExecution.java:
+171)
+	at org.gradle.in
+ternal.execution.
+steps.ExecuteStep
+.executeInternal(
+ExecuteStep.java:
+89)
+	at org.gradle.in
+ternal.execution.
+steps.ExecuteStep
+.access$000(Execu
+teStep.java:40)
+	at org.gradle.in
+ternal.execution.
+steps.ExecuteStep
+$1.call(ExecuteSt
+ep.java:53)
+	at org.gradle.in
+ternal.execution.
+steps.ExecuteStep
+$1.call(ExecuteSt
+ep.java:50)
+	at org.gradle.in
+ternal.operations
+.DefaultBuildOper
+ationRunner$Calla
+bleBuildOperation
+Worker.execute(De
+faultBuildOperati
+onRunner.java:204
+)
+	at org.gradle.in
+ternal.operations
+.DefaultBuildOper
+ationRunner$Calla
+bleBuildOperation
+Worker.execute(De
+faultBuildOperati
+onRunner.java:199
+)
+	at org.gradle.in
+ternal.operations
+.DefaultBuildOper
+ationRunner$2.exe
+cute(DefaultBuild
+OperationRunner.j
+ava:66)
+	at org.gradle.in
+ternal.operations
+.DefaultBuildOper
+ationRunner$2.exe
+cute(DefaultBuild
+OperationRunner.j
+ava:59)
+	at org.gradle.in
+ternal.operations
+.DefaultBuildOper
+ationRunner.execu
+te(DefaultBuildOp
+erationRunner.jav
+a:157)
+	at org.gradle.in
+ternal.operations
+.DefaultBuildOper
+ationRunner.execu
+te(DefaultBuildOp
+erationRunner.jav
+a:59)
+	at org.gradle.in
+ternal.operations
+.DefaultBuildOper
+ationRunner.call(
+DefaultBuildOpera
+tionRunner.java:5
+3)
+	at org.gradle.in
+ternal.operations
+.DefaultBuildOper
+ationExecutor.cal
+l(DefaultBuildOpe
+rationExecutor.ja
+va:73)
+	at org.gradle.in
+ternal.execution.
+steps.ExecuteStep
+.execute(ExecuteS
+tep.java:50)
+	at org.gradle.in
+ternal.execution.
+steps.ExecuteStep
+.execute(ExecuteS
+tep.java:40)
+	at org.gradle.in
+ternal.execution.
+steps.RemovePrevi
+ousOutputsStep.ex
+ecute(RemovePrevi
+ousOutputsStep.ja
+va:68)
+	at org.gradle.in
+ternal.execution.
+steps.RemovePrevi
+ousOutputsStep.ex
+ecute(RemovePrevi
+ousOutputsStep.ja
+va:38)
+	at org.gradle.in
+ternal.execution.
+steps.ResolveInpu
+tChangesStep.exec
+ute(ResolveInputC
+hangesStep.java:4
+8)
+	at org.gradle.in
+ternal.execution.
+steps.ResolveInpu
+tChangesStep.exec
+ute(ResolveInputC
+hangesStep.java:3
+6)
+	at org.gradle.in
+ternal.execution.
+steps.CancelExecu
+tionStep.execute(
+CancelExecutionSt
+ep.java:41)
+	at org.gradle.in
+ternal.execution.
+steps.TimeoutStep
+.executeWithoutTi
+meout(TimeoutStep
+.java:74)
+	at org.gradle.in
+ternal.execution.
+steps.TimeoutStep
+.execute(TimeoutS
+tep.java:55)
+	at org.gradle.in
+ternal.execution.
+steps.CreateOutpu
+tsStep.execute(Cr
+eateOutputsStep.j
+ava:51)
+	at org.gradle.in
+ternal.execution.
+steps.CreateOutpu
+tsStep.execute(Cr
+eateOutputsStep.j
+ava:29)
+	at org.gradle.in
+ternal.execution.
+steps.CaptureStat
+eAfterExecutionSt
+ep.execute(Captur
+eStateAfterExecut
+ionStep.java:61)
+	at org.gradle.in
+ternal.execution.
+steps.CaptureStat
+eAfterExecutionSt
+ep.execute(Captur
+eStateAfterExecut
+ionStep.java:42)
+	at org.gradle.in
+ternal.execution.
+steps.BroadcastCh
+angingOutputsStep
+.execute(Broadcas
+tChangingOutputsS
+tep.java:60)
+	at org.gradle.in
+ternal.execution.
+steps.BroadcastCh
+angingOutputsStep
+.execute(Broadcas
+tChangingOutputsS
+tep.java:27)
+	at org.gradle.in
+ternal.execution.
+steps.BuildCacheS
+tep.executeWithou
+tCache(BuildCache
+Step.java:180)
+	at org.gradle.in
+ternal.execution.
+steps.BuildCacheS
+tep.executeAndSto
+reInCache(BuildCa
+cheStep.java:155)
+	at org.gradle.in
+ternal.execution.
+steps.BuildCacheS
+tep.lambda$execut
+eWithCache$4(Buil
+dCacheStep.java:1
+25)
+	at org.gradle.in
+ternal.execution.
+steps.BuildCacheS
+tep.lambda$execut
+eWithCache$5(Buil
+dCacheStep.java:1
+25)
+	at org.gradle.in
+ternal.Try$Succes
+s.map(Try.java:16
+4)
+	at org.gradle.in
+ternal.execution.
+steps.BuildCacheS
+tep.executeWithCa
+che(BuildCacheSte
+p.java:85)
+	at org.gradle.in
+ternal.execution.
+steps.BuildCacheS
+tep.lambda$execut
+e$0(BuildCacheSte
+p.java:74)
+	at org.gradle.in
+ternal.Either$Lef
+t.fold(Either.jav
+a:115)
+	at org.gradle.in
+ternal.execution.
+caching.CachingSt
+ate.fold(CachingS
+tate.java:59)
+	at org.gradle.in
+ternal.execution.
+steps.BuildCacheS
+tep.execute(Build
+CacheStep.java:73
+)
+	at org.gradle.in
+ternal.execution.
+steps.BuildCacheS
+tep.execute(Build
+CacheStep.java:48
+)
+	at org.gradle.in
+ternal.execution.
+steps.StoreExecut
+ionStateStep.exec
+ute(StoreExecutio
+nStateStep.java:3
+6)
+	at org.gradle.in
+ternal.execution.
+steps.StoreExecut
+ionStateStep.exec
+ute(StoreExecutio
+nStateStep.java:2
+5)
+	at org.gradle.in
+ternal.execution.
+steps.RecordOutpu
+tsStep.execute(Re
+cordOutputsStep.j
+ava:36)
+	at org.gradle.in
+ternal.execution.
+steps.RecordOutpu
+tsStep.execute(Re
+cordOutputsStep.j
+ava:22)
+	at org.gradle.in
+ternal.execution.
+steps.SkipUpToDat
+eStep.executeBeca
+use(SkipUpToDateS
+tep.java:110)
+	at org.gradle.in
+ternal.execution.
+steps.SkipUpToDat
+eStep.lambda$exec
+ute$2(SkipUpToDat
+eStep.java:56)
+	at org.gradle.in
+ternal.execution.
+steps.SkipUpToDat
+eStep.execute(Ski
+pUpToDateStep.jav
+a:56)
+	at org.gradle.in
+ternal.execution.
+steps.SkipUpToDat
+eStep.execute(Ski
+pUpToDateStep.jav
+a:38)
+	at org.gradle.in
+ternal.execution.
+steps.ResolveChan
+gesStep.execute(R
+esolveChangesStep
+.java:73)
+	at org.gradle.in
+ternal.execution.
+steps.ResolveChan
+gesStep.execute(R
+esolveChangesStep
+.java:44)
+	at org.gradle.in
+ternal.execution.
+steps.legacy.Mark
+SnapshottingInput
+sFinishedStep.exe
+cute(MarkSnapshot
+tingInputsFinishe
+dStep.java:37)
+	at org.gradle.in
+ternal.execution.
+steps.legacy.Mark
+SnapshottingInput
+sFinishedStep.exe
+cute(MarkSnapshot
+tingInputsFinishe
+dStep.java:27)
+	at org.gradle.in
+ternal.execution.
+steps.ResolveCach
+ingStateStep.exec
+ute(ResolveCachin
+gStateStep.java:8
+9)
+	at org.gradle.in
+ternal.execution.
+steps.ResolveCach
+ingStateStep.exec
+ute(ResolveCachin
+gStateStep.java:5
+0)
+	at org.gradle.in
+ternal.execution.
+steps.ValidateSte
+p.execute(Validat
+eStep.java:114)
+	at org.gradle.in
+ternal.execution.
+steps.ValidateSte
+p.execute(Validat
+eStep.java:57)
+	at org.gradle.in
+ternal.execution.
+steps.CaptureStat
+eBeforeExecutionS
+tep.execute(Captu
+reStateBeforeExec
+utionStep.java:76
+)
+	at org.gradle.in
+ternal.execution.
+steps.CaptureStat
+eBeforeExecutionS
+tep.execute(Captu
+reStateBeforeExec
+utionStep.java:50
+)
+	at org.gradle.in
+ternal.execution.
+steps.SkipEmptyWo
+rkStep.executeWit
+hNoEmptySources(S
+kipEmptyWorkStep.
+java:249)
+	at org.gradle.in
+ternal.execution.
+steps.SkipEmptyWo
+rkStep.executeWit
+hNoEmptySources(S
+kipEmptyWorkStep.
+java:204)
+	at org.gradle.in
+ternal.execution.
+steps.SkipEmptyWo
+rkStep.execute(Sk
+ipEmptyWorkStep.j
+ava:83)
+	at org.gradle.in
+ternal.execution.
+steps.SkipEmptyWo
+rkStep.execute(Sk
+ipEmptyWorkStep.j
+ava:54)
+	at org.gradle.in
+ternal.execution.
+steps.RemoveUntra
+ckedExecutionStat
+eStep.execute(Rem
+oveUntrackedExecu
+tionStateStep.jav
+a:32)
+	at org.gradle.in
+ternal.execution.
+steps.RemoveUntra
+ckedExecutionStat
+eStep.execute(Rem
+oveUntrackedExecu
+tionStateStep.jav
+a:21)
+	at org.gradle.in
+ternal.execution.
+steps.legacy.Mark
+SnapshottingInput
+sStartedStep.exec
+ute(MarkSnapshott
+ingInputsStartedS
+tep.java:38)
+	at org.gradle.in
+ternal.execution.
+steps.LoadPreviou
+sExecutionStateSt
+ep.execute(LoadPr
+eviousExecutionSt
+ateStep.java:43)
+	at org.gradle.in
+ternal.execution.
+steps.LoadPreviou
+sExecutionStateSt
+ep.execute(LoadPr
+eviousExecutionSt
+ateStep.java:31)
+	at org.gradle.in
+ternal.execution.
+steps.AssignWorks
+paceStep.lambda$e
+xecute$0(AssignWo
+rkspaceStep.java:
+40)
+	at org.gradle.ap
+i.internal.tasks.
+execution.TaskExe
+cution$4.withWork
+space(TaskExecuti
+on.java:287)
+	at org.gradle.in
+ternal.execution.
+steps.AssignWorks
+paceStep.execute(
+AssignWorkspaceSt
+ep.java:40)
+	at org.gradle.in
+ternal.execution.
+steps.AssignWorks
+paceStep.execute(
+AssignWorkspaceSt
+ep.java:30)
+	at org.gradle.in
+ternal.execution.
+steps.IdentityCac
+heStep.execute(Id
+entityCacheStep.j
+ava:37)
+	at org.gradle.in
+ternal.execution.
+steps.IdentityCac
+heStep.execute(Id
+entityCacheStep.j
+ava:27)
+	at org.gradle.in
+ternal.execution.
+steps.IdentifySte
+p.execute(Identif
+yStep.java:44)
+	at org.gradle.in
+ternal.execution.
+steps.IdentifySte
+p.execute(Identif
+yStep.java:33)
+	at org.gradle.in
+ternal.execution.
+impl.DefaultExecu
+tionEngine$1.exec
+ute(DefaultExecut
+ionEngine.java:76
+)
+	at org.gradle.ap
+i.internal.tasks.
+execution.Execute
+ActionsTaskExecut
+er.executeIfValid
+(ExecuteActionsTa
+skExecuter.java:1
+44)
+	at org.gradle.ap
+i.internal.tasks.
+execution.Execute
+ActionsTaskExecut
+er.execute(Execut
+eActionsTaskExecu
+ter.java:133)
+	at org.gradle.ap
+i.internal.tasks.
+execution.Cleanup
+StaleOutputsExecu
+ter.execute(Clean
+upStaleOutputsExe
+cuter.java:77)
+	at org.gradle.ap
+i.internal.tasks.
+execution.Finaliz
+ePropertiesTaskEx
+ecuter.execute(Fi
+nalizePropertiesT
+askExecuter.java:
+46)
+	at org.gradle.ap
+i.internal.tasks.
+execution.Resolve
+TaskExecutionMode
+Executer.execute(
+ResolveTaskExecut
+ionModeExecuter.j
+ava:51)
+	at org.gradle.ap
+i.internal.tasks.
+execution.SkipTas
+kWithNoActionsExe
+cuter.execute(Ski
+pTaskWithNoAction
+sExecuter.java:57
+)
+	at org.gradle.ap
+i.internal.tasks.
+execution.SkipOnl
+yIfTaskExecuter.e
+xecute(SkipOnlyIf
+TaskExecuter.java
+:56)
+	at org.gradle.ap
+i.internal.tasks.
+execution.CatchEx
+ceptionTaskExecut
+er.execute(CatchE
+xceptionTaskExecu
+ter.java:36)
+	at org.gradle.ap
+i.internal.tasks.
+execution.EventFi
+ringTaskExecuter$
+1.executeTask(Eve
+ntFiringTaskExecu
+ter.java:77)
+	at org.gradle.ap
+i.internal.tasks.
+execution.EventFi
+ringTaskExecuter$
+1.call(EventFirin
+gTaskExecuter.jav
+a:55)
+	at org.gradle.ap
+i.internal.tasks.
+execution.EventFi
+ringTaskExecuter$
+1.call(EventFirin
+gTaskExecuter.jav
+a:52)
+	at org.gradle.in
+ternal.operations
+.DefaultBuildOper
+ationRunner$Calla
+bleBuildOperation
+Worker.execute(De
+faultBuildOperati
+onRunner.java:204
+)
+	at org.gradle.in
+ternal.operations
+.DefaultBuildOper
+ationRunner$Calla
+bleBuildOperation
+Worker.execute(De
+faultBuildOperati
+onRunner.java:199
+)
+	at org.gradle.in
+ternal.operations
+.DefaultBuildOper
+ationRunner$2.exe
+cute(DefaultBuild
+OperationRunner.j
+ava:66)
+	at org.gradle.in
+ternal.operations
+.DefaultBuildOper
+ationRunner$2.exe
+cute(DefaultBuild
+OperationRunner.j
+ava:59)
+	at org.gradle.in
+ternal.operations
+.DefaultBuildOper
+ationRunner.execu
+te(DefaultBuildOp
+erationRunner.jav
+a:157)
+	at org.gradle.in
+ternal.operations
+.DefaultBuildOper
+ationRunner.execu
+te(DefaultBuildOp
+erationRunner.jav
+a:59)
+	at org.gradle.in
+ternal.operations
+.DefaultBuildOper
+ationRunner.call(
+DefaultBuildOpera
+tionRunner.java:5
+3)
+	at org.gradle.in
+ternal.operations
+.DefaultBuildOper
+ationExecutor.cal
+l(DefaultBuildOpe
+rationExecutor.ja
+va:73)
+	at org.gradle.ap
+i.internal.tasks.
+execution.EventFi
+ringTaskExecuter.
+execute(EventFiri
+ngTaskExecuter.ja
+va:52)
+	at org.gradle.ex
+ecution.plan.Loca
+lTaskNodeExecutor
+.execute(LocalTas
+kNodeExecutor.jav
+a:74)
+	at org.gradle.ex
+ecution.taskgraph
+.DefaultTaskExecu
+tionGraph$InvokeN
+odeExecutorsActio
+n.execute(Default
+TaskExecutionGrap
+h.java:333)
+	at org.gradle.ex
+ecution.taskgraph
+.DefaultTaskExecu
+tionGraph$InvokeN
+odeExecutorsActio
+n.execute(Default
+TaskExecutionGrap
+h.java:320)
+	at org.gradle.ex
+ecution.taskgraph
+.DefaultTaskExecu
+tionGraph$BuildOp
+erationAwareExecu
+tionAction.execut
+e(DefaultTaskExec
+utionGraph.java:3
+13)
+	at org.gradle.ex
+ecution.taskgraph
+.DefaultTaskExecu
+tionGraph$BuildOp
+erationAwareExecu
+tionAction.execut
+e(DefaultTaskExec
+utionGraph.java:2
+99)
+	at org.gradle.ex
+ecution.plan.Defa
+ultPlanExecutor$E
+xecutorWorker.lam
+bda$run$0(Default
+PlanExecutor.java
+:143)
+	at org.gradle.ex
+ecution.plan.Defa
+ultPlanExecutor$E
+xecutorWorker.exe
+cute(DefaultPlanE
+xecutor.java:227)
+	at org.gradle.ex
+ecution.plan.Defa
+ultPlanExecutor$E
+xecutorWorker.exe
+cuteNextNode(Defa
+ultPlanExecutor.j
+ava:218)
+	at org.gradle.ex
+ecution.plan.Defa
+ultPlanExecutor$E
+xecutorWorker.run
+(DefaultPlanExecu
+tor.java:140)
+	at org.gradle.in
+ternal.concurrent
+.ExecutorPolicy$C
+atchAndRecordFail
+ures.onExecute(Ex
+ecutorPolicy.java
+:64)
+	at org.gradle.in
+ternal.concurrent
+.ManagedExecutorI
+mpl$1.run(Managed
+ExecutorImpl.java
+:48)
+* Get more help a
+t https://help.gr
+adle.org
+BUILD FAILED in 8
+s

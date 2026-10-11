@@ -370,7 +370,7 @@ public class CenterModule {
         }
     }
 
-    private void refreshAccountInfo() {
+    public void refreshAccountInfo() {
         String user = ruyiApi.getUsername();
         if (user == null || user.isEmpty()) user = "未登录";
         accountText.setText(user);

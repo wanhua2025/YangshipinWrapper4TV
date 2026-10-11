@@ -557,20 +557,52 @@ public class RuyiApi {
         conn.setRequestProperty("User-Agent", "YangshipinTV/1.0");
 
         int httpCode = conn.getResponseCode();
-        BufferedReader reader;
+        String contentType = conn.getContentType();
+        java.io.InputStream is;
         if (httpCode >= 200 && httpCode < 300) {
-            reader = new BufferedReader(new InputStreamReader(conn.getInputStream(), UTF8));
+            is = conn.getInputStream();
         } else {
-            reader = new BufferedReader(new InputStreamReader(conn.getErrorStream(), UTF8));
+            is = conn.getErrorStream();
         }
-        StringBuilder respSb = new StringBuilder();
-        String line;
-        while ((line = reader.readLine()) != null) respSb.append(line);
-        reader.close();
+
+        byte[] rawBytes = readAllBytes(is);
         conn.disconnect();
 
-        String raw = respSb.toString();
-        Log.d(TAG, "callApi raw=" + raw);
+        String charset = null;
+        if (contentType != null) {
+            java.util.regex.Matcher m = java.util.regex.Pattern.compile("charset=([a-zA-Z0-9_-]+)", java.util.regex.Pattern.CASE_INSENSITIVE).matcher(contentType);
+            if (m.find()) charset = m.group(1).toLowerCase();
+        }
+        Log.d(TAG, "callApi contentType=" + contentType + " detectedCharset=" + charset + " byteLen=" + rawBytes.length + " act=" + act);
+
+        String gbkTry = new String(rawBytes, GBK);
+        String utf8Try = new String(rawBytes, UTF8);
+        String raw;
+
+        if (charset != null && (charset.contains("utf-8") || charset.contains("utf8"))) {
+            raw = utf8Try;
+            Log.d(TAG, "callApi_force_UTF8_by_contentType act=" + act);
+        } else if (charset != null && (charset.contains("gbk") || charset.contains("gb2312"))) {
+            raw = gbkTry;
+            Log.d(TAG, "callApi_force_GBK_by_contentType act=" + act);
+        } else if (isJsonValid(gbkTry) && !isJsonValid(utf8Try)) {
+            raw = gbkTry;
+            Log.d(TAG, "callApi_chosen_GBK_json_only_valid act=" + act);
+        } else if (isJsonValid(utf8Try) && !isJsonValid(gbkTry)) {
+            raw = utf8Try;
+            Log.d(TAG, "callApi_chosen_UTF8_json_only_valid act=" + act);
+        } else {
+            int gbkScore = scoreChinese(gbkTry);
+            int utf8Score = scoreChinese(utf8Try);
+            if (gbkScore > utf8Score) {
+                raw = gbkTry;
+                Log.d(TAG, "callApi_chosen_GBK score=" + gbkScore + " utf8Score=" + utf8Score + " act=" + act);
+            } else {
+                raw = utf8Try;
+                Log.d(TAG, "callApi_chosen_UTF8 score=" + utf8Score + " gbkScore=" + gbkScore + " act=" + act);
+            }
+        }
+        Log.d(TAG, "callApi raw_preview=" + raw.substring(0, Math.min(150, raw.length())) + " act=" + act);
 
         String jsonStr = extractJson(raw);
         if (jsonStr == null) {
@@ -591,7 +623,50 @@ public class RuyiApi {
         } catch (Exception e) {
             msg = "";
         }
+        if (msg != null && msg.length() > 0 && msg.matches("[0-9a-fA-F]{20,}")) {
+            try {
+                String dec = miRc4Decrypt(msg);
+                if (dec != null && dec.length() > 0) {
+                    msg = dec;
+                }
+            } catch (Exception ignored) {}
+        }
+        Log.d(TAG, "callApi final_code=" + code + " final_msg=" + msg.substring(0, Math.min(200, msg.length())));
         return new ApiResp(code, msg, json);
+    }
+
+    private static byte[] readAllBytes(java.io.InputStream is) throws Exception {
+        if (is == null) return new byte[0];
+        java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
+        byte[] buf = new byte[4096];
+        int n;
+        while ((n = is.read(buf)) > 0) baos.write(buf, 0, n);
+        is.close();
+        return baos.toByteArray();
+    }
+
+    private static boolean isJsonValid(String s) {
+        String jsonStr = extractJson(s);
+        if (jsonStr == null) return false;
+        try {
+            new JSONObject(jsonStr);
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private static int scoreChinese(String s) {
+        int score = 0;
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (c >= 0x4E00 && c <= 0x9FFF) score += 2;
+            else if (c >= 0x3000 && c <= 0x303F) score += 2;
+            else if (c >= 0xFF00 && c <= 0xFFEF) score += 1;
+            else if (c == '\uFFFD') score -= 10;
+            else if (c >= 0xE000 && c <= 0xF8FF) score -= 5;
+        }
+        return score;
     }
 
     private static class ApiResp {
@@ -658,7 +733,12 @@ public class RuyiApi {
         }
         byte[] keyBytes = RC4_KEY.getBytes(GBK);
         byte[] raw = rc4Crypt(keyBytes, data);
-        return new String(raw, GBK);
+        String gbkResult = new String(raw, GBK);
+        if (gbkResult.contains("\uFFFD")) {
+            String utf8Result = new String(raw, UTF8);
+            if (!utf8Result.contains("\uFFFD")) return utf8Result;
+        }
+        return gbkResult;
     }
 
     private static byte[] rc4Crypt(byte[] key, byte[] data) {

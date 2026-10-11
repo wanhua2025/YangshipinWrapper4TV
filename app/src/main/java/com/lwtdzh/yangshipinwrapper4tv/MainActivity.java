@@ -2,7 +2,10 @@ package com.lwtdzh.yangshipinwrapper4tv;
 
 import android.annotation.SuppressLint;
 import android.app.Activity;
+import android.app.AlarmManager;
 import android.app.AlertDialog;
+import android.app.PendingIntent;
+import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
@@ -14,11 +17,15 @@ import android.graphics.Path;
 import android.graphics.Rect;
 import android.graphics.drawable.ColorDrawable;
 import android.net.Uri;
+import android.net.ConnectivityManager;
+import android.net.Network;
+import android.net.NetworkInfo;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.SystemClock;
 import android.provider.Settings;
 import android.text.SpannableString;
 import android.text.Spanned;
@@ -51,6 +58,7 @@ import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
 import androidx.core.content.FileProvider;
+import com.google.android.exoplayer2.C;
 import com.google.android.exoplayer2.DefaultLoadControl;
 import com.google.android.exoplayer2.DefaultRenderersFactory;
 import com.google.android.exoplayer2.ExoPlayer;
@@ -61,6 +69,7 @@ import com.google.android.exoplayer2.source.ProgressiveMediaSource;
 import com.google.android.exoplayer2.source.hls.HlsMediaSource;
 import com.google.android.exoplayer2.upstream.DefaultHttpDataSource;
 import xyz.doikki.videoplayer.exo.OkHttpDataSource;
+import com.google.android.exoplayer2.ui.AspectRatioFrameLayout;
 import com.google.android.exoplayer2.ui.PlayerView;
 import com.google.android.exoplayer2.video.VideoRendererEventListener;
 import com.google.android.exoplayer2.audio.AudioRendererEventListener;
@@ -71,6 +80,7 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.BufferedInputStream;
+import java.io.BufferedOutputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileOutputStream;
@@ -122,6 +132,7 @@ public class MainActivity extends Activity {
 
     private final Handler handler = new Handler(Looper.getMainLooper());
     private static boolean sVideoDecodeFailed = false;
+    private static boolean sIjkCrashed = false;
     private static final long MENU_AUTO_HIDE_MS = 15000;
     private static final long BLACK_SCREEN_CHECK_DELAY = 4000;
     private boolean mVideoRendered = false;
@@ -208,12 +219,23 @@ public class MainActivity extends Activity {
     private WebView bridgeWebView;
     private PlayerView playerView;
     private ExoPlayer exoPlayer;
+    private static OkHttpClient sSharedOkClient = null;
+    private static OkHttpDataSource.Factory sSharedOkFactory = null;
+    private static HlsMediaSource.Factory sSharedHlsFactory = null;
+    private static ProgressiveMediaSource.Factory sSharedProgFactory = null;
     private boolean mUseIjkPlayer = false;
     private IjkPlayerHelper mIjkPlayer;
-    private TextureView mIjkTextureView;
+    private android.view.SurfaceView mIjkSurfaceView;
     private FrameLayout loadingOverlay;
     private GestureTraceView gestureTraceView;
     private TextView overlayText;
+    private LinearLayout updatePanel;
+    private ProgressBar updateProgressBar;
+    private TextView updateProgressText;
+    private TextView updateCancelBtn;
+    private volatile boolean downloadCancelled = false;
+    private volatile boolean versionDialogShown = false;
+    private volatile boolean downloadingNow = false;
     private TextView statusText;
     private LinearLayout menuPanel;
     private TextView menuHeader;
@@ -235,7 +257,7 @@ public class MainActivity extends Activity {
     private int requestCounter = 0;
     private int currentIndex = 0;
     private int menuPage = MENU_PAGE_CHANNELS;
-    private boolean autoStartOnBoot = true;
+    private boolean autoStartOnBoot = false;
     private int bridgeAttempts = 0;
     private boolean channelsLoaded = false;
     private String playbackMode = PLAYBACK_MODE_AUTO;
@@ -306,6 +328,7 @@ public class MainActivity extends Activity {
                                         Log.i(TAG, "ruyi_heartbeat_recovered from blocked state");
                                         applyBlockedState(false, null);
                                     }
+                                    if (centerModule != null) centerModule.refreshAccountInfo();
                                 } else {
                                     Log.w(TAG, "ruyi_heartbeat_fail code=" + result.code);
                                     if (result.code == 114) {
@@ -352,7 +375,9 @@ public class MainActivity extends Activity {
             playbackMode = PLAYBACK_MODE_HW;
         }
         applyPlaybackModeToPlayerEngine();
-        autoStartOnBoot = preferences.getBoolean(PREF_AUTO_START, true);
+        autoStartOnBoot = preferences.getBoolean(PREF_AUTO_START, false);
+        ensureBootReceiverEnabled();
+        scheduleBootAlarm();
 
         buildUi();
         // setupProtocolBridge(); // DISABLED: using M3U + ExoPlayer instead
@@ -360,8 +385,97 @@ public class MainActivity extends Activity {
         loadM3uList();
         initRuyi();
         centerModule = new CenterModule(this, ruyiApi, root);
-        showOverlay("加载中...", false);
+        showOverlay("加载中...", true);
         updateStatus();
+        applyCutoutMode();
+    }
+
+    private void applyCutoutMode() {
+        try {
+            if (Build.VERSION.SDK_INT >= 28) {
+                android.view.WindowManager.LayoutParams lp = getWindow().getAttributes();
+                java.lang.reflect.Field f = android.view.WindowManager.LayoutParams.class
+                        .getDeclaredField("layoutInDisplayCutoutMode");
+                f.setInt(lp, 1);
+                getWindow().setAttributes(lp);
+                Log.i(TAG, "cutout_mode_short_edges_set");
+            }
+        } catch (Throwable t) {
+            Log.d(TAG, "cutout_mode_not_supported");
+        }
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        if (exoPlayer != null) {
+            try {
+                if (exoPlayer.getPlayWhenReady()) {
+                    exoPlayer.setPlayWhenReady(false);
+                }
+            } catch (Throwable ignored) {}
+        }
+        if (mIjkPlayer != null) {
+            try { mIjkPlayer.pause(); } catch (Throwable ignored) {}
+        }
+        abandonAudioFocusInternal();
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        hideSystemUi();
+        requestAudioFocusInternal();
+        if (exoPlayer != null) {
+            try {
+                if (exoPlayer.getPlaybackState() == Player.STATE_READY) {
+                    exoPlayer.setPlayWhenReady(true);
+                }
+            } catch (Throwable ignored) {}
+        }
+        if (mIjkPlayer != null) {
+            try { mIjkPlayer.start(); } catch (Throwable ignored) {}
+        }
+    }
+
+    @Override
+    protected void onStart() {
+        super.onStart();
+        requestAudioFocusInternal();
+    }
+
+    @Override
+    protected void onStop() {
+        super.onStop();
+        abandonAudioFocusInternal();
+    }
+
+    private void requestAudioFocusInternal() {
+        try {
+            if (android.content.Context.AUDIO_SERVICE != null) {
+                android.media.AudioManager am = (android.media.AudioManager) getSystemService(AUDIO_SERVICE);
+                if (am != null) {
+                    int result = am.requestAudioFocus(
+                            null,
+                            android.media.AudioManager.STREAM_MUSIC,
+                            android.media.AudioManager.AUDIOFOCUS_GAIN_TRANSIENT);
+                    Log.i(TAG, "audio_focus_requested result=" + result);
+                }
+            }
+        } catch (Throwable t) {
+            Log.d(TAG, "audio_focus_request_failed: " + t.getMessage());
+        }
+    }
+
+    private void abandonAudioFocusInternal() {
+        try {
+            android.media.AudioManager am = (android.media.AudioManager) getSystemService(AUDIO_SERVICE);
+            if (am != null) {
+                am.abandonAudioFocus(null);
+            }
+        } catch (Throwable t) {
+            Log.d(TAG, "audio_focus_abandon_failed: " + t.getMessage());
+        }
     }
 
     private void buildUi() {
@@ -381,6 +495,8 @@ public class MainActivity extends Activity {
                 ViewGroup.LayoutParams.WRAP_CONTENT,
                 Gravity.CENTER);
         root.addView(overlayText, overlayParams);
+
+        buildUpdatePanel();
 
         statusText = new TextView(this);
         statusText.setVisibility(View.GONE);
@@ -408,6 +524,93 @@ public class MainActivity extends Activity {
         buildMenu();
         setContentView(root);
         hideSystemUi();
+    }
+
+    private void buildUpdatePanel() {
+        updatePanel = new LinearLayout(this);
+        updatePanel.setOrientation(LinearLayout.VERTICAL);
+        GradientDrawable panelBg = new GradientDrawable();
+        panelBg.setShape(GradientDrawable.RECTANGLE);
+        panelBg.setColor(0xE6000000);
+        panelBg.setCornerRadius(dp(12));
+        updatePanel.setBackground(panelBg);
+        updatePanel.setPadding(dp(18), dp(12), dp(18), dp(14));
+        updatePanel.setVisibility(View.GONE);
+
+        LinearLayout topRow = new LinearLayout(this);
+        topRow.setOrientation(LinearLayout.HORIZONTAL);
+        topRow.setGravity(Gravity.CENTER_VERTICAL);
+
+        updateProgressText = new TextView(this);
+        updateProgressText.setTextColor(Color.WHITE);
+        updateProgressText.setTextSize(13);
+        updateProgressText.setText("正在准备更新...");
+        LinearLayout.LayoutParams textLp = new LinearLayout.LayoutParams(0,
+                ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f);
+        topRow.addView(updateProgressText, textLp);
+
+        updateCancelBtn = new TextView(this);
+        updateCancelBtn.setText("取消");
+        updateCancelBtn.setTextColor(0xFFAAAAAA);
+        updateCancelBtn.setTextSize(13);
+        updateCancelBtn.setPadding(dp(10), dp(2), dp(10), dp(2));
+        GradientDrawable btnBg = new GradientDrawable();
+        btnBg.setShape(GradientDrawable.RECTANGLE);
+        btnBg.setColor(0x33FFFFFF);
+        btnBg.setCornerRadius(dp(6));
+        updateCancelBtn.setBackground(btnBg);
+        updateCancelBtn.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                downloadCancelled = true;
+                hideUpdatePanel();
+                Log.i(TAG, "update_download_cancelled_by_user");
+            }
+        });
+        topRow.addView(updateCancelBtn);
+
+        updatePanel.addView(topRow, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        updateProgressBar = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal);
+        updateProgressBar.setMax(100);
+        updateProgressBar.setProgress(0);
+        updateProgressBar.setIndeterminate(false);
+        LinearLayout.LayoutParams barLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        barLp.topMargin = dp(8);
+        barLp.height = dp(6);
+        updatePanel.addView(updateProgressBar, barLp);
+
+        FrameLayout.LayoutParams panelLp = new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        panelLp.gravity = Gravity.BOTTOM;
+        panelLp.leftMargin = dp(16);
+        panelLp.rightMargin = dp(16);
+        panelLp.bottomMargin = dp(24);
+        root.addView(updatePanel, panelLp);
+    }
+
+    private void showUpdatePanel(String msg) {
+        if (updateProgressText != null) updateProgressText.setText(msg);
+        if (updateProgressBar != null) {
+            updateProgressBar.setProgress(0);
+            updateProgressBar.setIndeterminate(true);
+        }
+        if (updatePanel != null) updatePanel.setVisibility(View.VISIBLE);
+        downloadCancelled = false;
+    }
+
+    private void updateProgressPanel(int pct, String text) {
+        if (updateProgressBar != null) {
+            updateProgressBar.setIndeterminate(pct < 0);
+            if (pct >= 0) updateProgressBar.setProgress(pct);
+        }
+        if (updateProgressText != null && text != null) updateProgressText.setText(text);
+    }
+
+    private void hideUpdatePanel() {
+        if (updatePanel != null) updatePanel.setVisibility(View.GONE);
     }
 
     private void buildMenu() {
@@ -442,6 +645,8 @@ public class MainActivity extends Activity {
 
         groupRecyclerView = new RecyclerView(this);
         groupRecyclerView.setLayoutManager(new LinearLayoutManager(this, LinearLayoutManager.VERTICAL, false));
+        groupRecyclerView.setItemAnimator(null);
+        groupRecyclerView.setHasFixedSize(true);
         groupAdapter = new GroupAdapter();
         groupRecyclerView.setAdapter(groupAdapter);
         groupRecyclerView.setFocusable(true);
@@ -486,6 +691,7 @@ public class MainActivity extends Activity {
             channelRecyclerView = new RecyclerView(this);
             channelRecyclerView.setLayoutManager(new LinearLayoutManager(this, LinearLayoutManager.VERTICAL, false));
             channelRecyclerView.setItemAnimator(null);
+            ((LinearLayoutManager) channelRecyclerView.getLayoutManager()).setInitialPrefetchItemCount(6);
             channelItemAdapter = new ChannelItemAdapter();
             channelRecyclerView.setAdapter(channelItemAdapter);
             channelRecyclerView.setFocusable(true);
@@ -612,6 +818,10 @@ public class MainActivity extends Activity {
             playerView.setBackgroundColor(Color.BLACK);
             playerView.setUseController(false);
             playerView.setFocusable(false);
+            playerView.setResizeMode(AspectRatioFrameLayout.RESIZE_MODE_FIT);
+            try {
+                playerView.setLayerType(View.LAYER_TYPE_NONE, null);
+            } catch (Throwable ignored) {}
         }
 
         DefaultRenderersFactory renderersFactory = new DefaultRenderersFactory(this) {
@@ -688,16 +898,17 @@ public class MainActivity extends Activity {
                     com.google.android.exoplayer2.video.VideoRendererEventListener eventListener,
                     long allowedVideoJoiningTimeMs,
                     java.util.ArrayList<com.google.android.exoplayer2.Renderer> out) {
-                if (Build.VERSION.SDK_INT < 21 && sVideoDecodeFailed) {
-                    Log.i(TAG, "skip_video_renderer_on_api19_decode_failed");
-                    return;
-                }
-                try {
-                    super.buildVideoRenderers(context, extensionRendererMode, mediaCodecSelector,
-                            enableDecoderFallback, eventHandler, eventListener, allowedVideoJoiningTimeMs, out);
-                    Log.i(TAG, "video_renderers_mediacodec_added count=" + out.size());
-                } catch (Throwable t) {
-                    Log.w(TAG, "video_renderers_build_crash_sdk=" + Build.VERSION.SDK_INT, t);
+                boolean skipMediaCodec = Build.VERSION.SDK_INT < 21 && sVideoDecodeFailed;
+                if (skipMediaCodec) {
+                    Log.i(TAG, "skip_mediacodec_video_renderer_on_api19_decode_failed_use_ffmpeg");
+                } else {
+                    try {
+                        super.buildVideoRenderers(context, extensionRendererMode, mediaCodecSelector,
+                                enableDecoderFallback, eventHandler, eventListener, allowedVideoJoiningTimeMs, out);
+                        Log.i(TAG, "video_renderers_mediacodec_added count=" + out.size());
+                    } catch (Throwable t) {
+                        Log.w(TAG, "video_renderers_build_crash_sdk=" + Build.VERSION.SDK_INT, t);
+                    }
                 }
                 try {
                     Class<?> cls = Class.forName("com.google.android.exoplayer2.ext.ffmpeg.FfmpegVideoRenderer");
@@ -709,7 +920,7 @@ public class MainActivity extends Activity {
                             (com.google.android.exoplayer2.Renderer) ctor.newInstance(
                                     eventHandler, eventListener, allowedVideoJoiningTimeMs);
                     out.add(ffmpegVideo);
-                    Log.i(TAG, "ffmpeg_video_renderer_added total=" + out.size());
+                    Log.i(TAG, "ffmpeg_video_renderer_added total=" + out.size() + " skip_mediacodec=" + skipMediaCodec);
                 } catch (ClassNotFoundException ignored) {
                     Log.i(TAG, "ffmpeg_video_renderer_not_available_jellyfin_audio_only");
                 } catch (Throwable t) {
@@ -718,27 +929,89 @@ public class MainActivity extends Activity {
             }
         };
         renderersFactory.setEnableDecoderFallback(true);
-        renderersFactory.setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_PREFER);
-        if (Build.VERSION.SDK_INT < 21) {
-            renderersFactory.forceDisableMediaCodecAsynchronousQueueing();
-            renderersFactory.experimentalSetSynchronizeCodecInteractionsWithQueueingEnabled(true);
-            Log.i(TAG, "sdk19_force_sync_codec_queue");
+        renderersFactory.setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON);
+        try {
+            java.lang.reflect.Field f = DefaultRenderersFactory.class.getDeclaredField("allowedVideoJoiningTimeMs");
+            f.setAccessible(true);
+            f.setLong(renderersFactory, 1000);
+            Log.i(TAG, "exo_joining_time_set=1000ms");
+        } catch (Throwable t) {
+            Log.d(TAG, "exo_joining_time_reflect_failed: " + t.getMessage());
         }
-        Log.i(TAG, "exo_renderers_factory_ready sdk=" + Build.VERSION.SDK_INT
-                + " ffmpeg=" + com.google.android.exoplayer2.ext.ffmpeg.FfmpegLibrary.isAvailable());
+        if (Build.VERSION.SDK_INT >= 28) {
+            try {
+                renderersFactory.experimentalSetSynchronizeCodecInteractionsWithQueueingEnabled(false);
+                Log.i(TAG, "exo_android9_async_codec_queue_enabled sdk=" + Build.VERSION.SDK_INT);
+            } catch (Throwable t) {
+                Log.d(TAG, "exo_async_queue_not_available: " + t.getMessage());
+                renderersFactory.forceDisableMediaCodecAsynchronousQueueing();
+            }
+        } else {
+            renderersFactory.forceDisableMediaCodecAsynchronousQueueing();
+            try {
+                renderersFactory.experimentalSetSynchronizeCodecInteractionsWithQueueingEnabled(true);
+            } catch (Throwable ignored) {}
+            Log.i(TAG, "exo_force_sync_codec_queue_pre_android9 sdk=" + Build.VERSION.SDK_INT);
+        }
 
-        // 直播专用小缓冲配置（1G内存友好，省内存不爆）
+        long totalMemBytes = java.lang.Runtime.getRuntime().maxMemory();
+        boolean isLowMemDevice = totalMemBytes > 0 && totalMemBytes <= 128 * 1024 * 1024;
+        boolean isAndroid9Plus = Build.VERSION.SDK_INT >= 28;
+        Log.i(TAG, "exo_mem_total=" + (totalMemBytes / (1024 * 1024)) + "MB lowMem=" + isLowMemDevice
+                + " android9Plus=" + isAndroid9Plus);
+        int minBuf, maxBuf, bufPlayback, bufRebuf;
+        if (isAndroid9Plus) {
+            minBuf = isLowMemDevice ? 4000 : 6000;
+            maxBuf = isLowMemDevice ? 12000 : 18000;
+            bufPlayback = 1000;
+            bufRebuf = 2500;
+        } else {
+            minBuf = isLowMemDevice ? 4000 : 6000;
+            maxBuf = isLowMemDevice ? 10000 : 15000;
+            bufPlayback = 1000;
+            bufRebuf = 2500;
+        }
         DefaultLoadControl loadControl = new DefaultLoadControl.Builder()
-                .setBufferDurationsMs(
-                        1500,   // minBufferMs: 1.5秒最小缓冲
-                        3000,   // maxBufferMs: 3秒最大缓冲（默认5000太大，直播不需要）
-                        1000,   // bufferForPlaybackMs: 起播缓冲1秒
-                        1500    // bufferForPlaybackAfterRebufferMs: 重缓冲1.5秒
-                ).build();
+                .setBufferDurationsMs(minBuf, maxBuf, bufPlayback, bufRebuf)
+                .setTargetBufferBytes(isLowMemDevice ? 16 * 1024 * 1024 : 32 * 1024 * 1024)
+                .setPrioritizeTimeOverSizeThresholds(true)
+                .build();
+        com.google.android.exoplayer2.trackselection.DefaultTrackSelector trackSelector =
+                new com.google.android.exoplayer2.trackselection.DefaultTrackSelector(this);
+        try {
+            com.google.android.exoplayer2.trackselection.DefaultTrackSelector.SelectionOverride videoOverride =
+                    new com.google.android.exoplayer2.trackselection.DefaultTrackSelector.SelectionOverride(
+                            com.google.android.exoplayer2.C.TRACK_TYPE_VIDEO, -1);
+            trackSelector.setParameters(
+                    trackSelector.buildUponParameters()
+                            .setMaxVideoSize(Integer.MAX_VALUE, Integer.MAX_VALUE)
+                            .setForceLowestBitrate(false)
+                            .setPreferredTextLanguage(null)
+                            .setRendererDisabled(com.google.android.exoplayer2.C.TRACK_TYPE_TEXT, true)
+                            .build());
+            Log.i(TAG, "exo_trackSelector_configured");
+        } catch (Throwable t) {
+            Log.d(TAG, "exo_trackSelector_config_failed: " + t.getMessage());
+        }
         exoPlayer = new ExoPlayer.Builder(this)
                 .setRenderersFactory(renderersFactory)
                 .setLoadControl(loadControl)
+                .setTrackSelector(trackSelector)
                 .build();
+        try { exoPlayer.setForegroundMode(true); } catch (Throwable ignored) {}
+        exoPlayer.setVideoScalingMode(C.VIDEO_SCALING_MODE_SCALE_TO_FIT);
+        if (isAndroid9Plus) {
+            try {
+                java.lang.reflect.Method m = ExoPlayer.class.getMethod(
+                        "setExperimentalCpuAffinityMode", int.class);
+                int perfMode = Class.forName("com.google.android.exoplayer2.util.CpuAffinityProvider")
+                        .getField("AFFINITY_MODE_PERFORMANCE").getInt(null);
+                m.invoke(exoPlayer, perfMode);
+                Log.i(TAG, "exo_android9_cpu_affinity_performance_set");
+            } catch (Throwable t) {
+                Log.d(TAG, "exo_cpu_affinity_not_available");
+            }
+        }
         playerView.setPlayer(exoPlayer);
         // 确保playerView已经添加到root
         if (playerView.getParent() == null) {
@@ -763,6 +1036,9 @@ public class MainActivity extends Activity {
                         showCenterMessage("音频播放中（视频解码器模拟器不可用）", 3000);
                     }
                     startBlackscreenDetection();
+                    if (Build.VERSION.SDK_INT >= 28) {
+                        trySetMediaCodecLowLatency();
+                    }
                 } else if (playbackState == Player.STATE_BUFFERING) {
                     showPlaybackOverlay();
                 } else if (playbackState == Player.STATE_ENDED) {
@@ -792,6 +1068,7 @@ public class MainActivity extends Activity {
                 handler.removeCallbacks(blackscreenCheckRunnable);
                 mBlackscreenDetectInProgress = false;
                 boolean isVideoDecodeError = false;
+                boolean isBehindLiveWindow = false;
                 Throwable cause = error;
                 while (cause != null) {
                     String cn = cause.getClass().getName();
@@ -799,11 +1076,21 @@ public class MainActivity extends Activity {
                         isVideoDecodeError = true;
                         break;
                     }
+                    if (cn.contains("BehindLiveWindowException")) {
+                        isBehindLiveWindow = true;
+                    }
                     cause = cause.getCause();
                 }
                 if (isVideoDecodeError) {
                     Log.w(TAG, "exo_video_decode_error_switch_to_ijk");
                     switchPlayerToIjk();
+                    return;
+                }
+                if (isBehindLiveWindow) {
+                    Log.w(TAG, "behind_live_window_auto_retry_same_source");
+                    handler.postDelayed(new Runnable() {
+                        @Override public void run() { playCurrentWithExo(); }
+                    }, 500);
                     return;
                 }
                 if (Build.VERSION.SDK_INT < 21 && isVideoDecodeError && !videoDecodeFailedOnApi19) {
@@ -835,6 +1122,16 @@ public class MainActivity extends Activity {
 
     private void switchPlayerToIjk() {
         if (mUseIjkPlayer) return;
+        if (sIjkCrashed) {
+            Log.w(TAG, "switch_to_ijk_blocked_previous_native_crash_use_exo_ffmpeg");
+            if (Build.VERSION.SDK_INT < 21 && !sVideoDecodeFailed) {
+                Log.i(TAG, "switch_to_ijk_blocked_api19_rebuild_exo_with_ffmpeg");
+                sVideoDecodeFailed = true;
+                initExoPlayer();
+                playCurrentWithExo();
+            }
+            return;
+        }
         if (mIjkPlayerRetryCount >= MAX_IJK_RETRY) {
             Log.w(TAG, "ijk_player_max_retry_reached abort_switch");
             showCenterMessage("自动播放器切换失败，请手动切换解码模式", 5000);
@@ -859,39 +1156,43 @@ public class MainActivity extends Activity {
         if (playerView != null) {
             playerView.setVisibility(View.VISIBLE);
         }
-        if (mIjkTextureView != null) {
-            mIjkTextureView.setVisibility(View.GONE);
+        if (mIjkSurfaceView != null) {
+            mIjkSurfaceView.setVisibility(View.GONE);
         }
         initExoPlayer();
         playCurrentWithExo();
     }
 
     private void initIjkPlayer() {
+        if (sIjkCrashed) {
+            Log.w(TAG, "init_ijk_player_blocked_previous_native_crash_fallback_exo");
+            mUseIjkPlayer = false;
+            initExoPlayer();
+            return;
+        }
         if (!IjkPlayerHelper.isAvailable()) {
             Log.w(TAG, "init_ijk_player_but_native_not_available_fallback_exo");
             mUseIjkPlayer = false;
             initExoPlayer();
             return;
         }
-        Log.i(TAG, "init_ijk_player api19_fallback");
-        // 清理旧播放器
+        Log.i(TAG, "init_ijk_player_surfaceview_mode");
         releasePlayer();
-        if (mIjkTextureView == null) {
-            mIjkTextureView = new TextureView(this);
-            mIjkTextureView.setLayoutParams(new FrameLayout.LayoutParams(
+        if (mIjkSurfaceView == null) {
+            mIjkSurfaceView = new android.view.SurfaceView(this);
+            mIjkSurfaceView.setLayoutParams(new FrameLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT,
                     ViewGroup.LayoutParams.MATCH_PARENT));
         }
-        if (mIjkTextureView.getParent() == null) {
-            root.addView(mIjkTextureView, 0);
+        if (mIjkSurfaceView.getParent() == null) {
+            root.addView(mIjkSurfaceView, 0);
         }
-        // 确保PlayerView隐藏（如果存在）
         if (playerView != null) {
             playerView.setVisibility(View.GONE);
         }
-        mIjkTextureView.setVisibility(View.VISIBLE);
+        mIjkSurfaceView.setVisibility(View.VISIBLE);
         if (mIjkPlayer == null) {
-            mIjkPlayer = new IjkPlayerHelper(mIjkTextureView, new IjkPlayerHelper.IjkPlayerCallback() {
+            mIjkPlayer = new IjkPlayerHelper(mIjkSurfaceView, new IjkPlayerHelper.IjkPlayerCallback() {
                 @Override
                 public void onPrepared() {
                     Log.i(TAG, "ijk_on_prepared");
@@ -994,6 +1295,47 @@ public class MainActivity extends Activity {
         }
     }
 
+    private void trySetMediaCodecLowLatency() {
+        if (Build.VERSION.SDK_INT < 28 || exoPlayer == null) return;
+        try {
+            java.lang.reflect.Field renderersField = ExoPlayer.class.getDeclaredField("renderers");
+            renderersField.setAccessible(true);
+            Object[] renderers = (Object[]) renderersField.get(exoPlayer);
+            if (renderers == null) return;
+            Class<?> codecClass = Class.forName("android.media.MediaCodec");
+            java.lang.reflect.Field lowLatencyField = codecClass.getField("MEDIA_PERFORMANCE_MODE_LOW_LATENCY");
+            final int LOW_LATENCY = lowLatencyField.getInt(null);
+            java.lang.reflect.Field powerSavingField = codecClass.getField("MEDIA_PERFORMANCE_MODE_POWER_SAVING");
+            final int POWER_SAVING = powerSavingField.getInt(null);
+            java.lang.reflect.Method setPerformanceMode = codecClass.getMethod("setPerformanceMode", int.class);
+            for (Object renderer : renderers) {
+                if (renderer == null) continue;
+                String cn = renderer.getClass().getName();
+                if (!cn.contains("MediaCodecVideoRenderer") && !cn.contains("MediaCodecAudioRenderer")) {
+                    continue;
+                }
+                try {
+                    java.lang.reflect.Method getCodec = renderer.getClass().getDeclaredMethod("getCodec");
+                    getCodec.setAccessible(true);
+                    Object codec = getCodec.invoke(renderer);
+                    if (codec != null && codecClass.isInstance(codec)) {
+                        try {
+                            setPerformanceMode.invoke(codec, LOW_LATENCY);
+                            Log.i(TAG, "exo_android9_mediacodec_low_latency_set on "
+                                    + (cn.contains("Video") ? "video" : "audio"));
+                        } catch (Throwable ignored) {
+                            try {
+                                setPerformanceMode.invoke(codec, POWER_SAVING);
+                            } catch (Throwable ignored2) {}
+                        }
+                    }
+                } catch (Throwable ignored) {}
+            }
+        } catch (Throwable t) {
+            Log.d(TAG, "exo_low_latency_reflect_failed: " + t.getMessage());
+        }
+    }
+
     private boolean playerIsPlaying() {
         if (mUseIjkPlayer) {
             return mIjkPlayer != null && mIjkPlayer.isPlaying();
@@ -1006,17 +1348,61 @@ public class MainActivity extends Activity {
         }
     }
 
+    private static final int M3U_MAX_RETRY = 5;
+    private static final long M3U_RETRY_INTERVAL_MS = 4000L;
+
+    private boolean isNetworkReady() {
+        try {
+            ConnectivityManager cm = (ConnectivityManager) getSystemService(CONNECTIVITY_SERVICE);
+            if (cm == null) return false;
+            @SuppressWarnings("deprecation")
+            NetworkInfo ni = cm.getActiveNetworkInfo();
+            if (ni != null && ni.isConnected()) return true;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                if (cm.getActiveNetwork() != null) return true;
+                Network[] nets = cm.getAllNetworks();
+                if (nets != null) {
+                    for (Network n : nets) {
+                        if (cm.getNetworkCapabilities(n) != null) return true;
+                    }
+                }
+            }
+            return false;
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
     private void loadM3uList() {
+        loadM3uListWithRetry(0);
+    }
+
+    private void loadM3uListWithRetry(final int attempt) {
+        if (attempt > 0) {
+            Log.i(TAG, "m3u_retry attempt=" + attempt);
+            showOverlay("频道列表加载失败，第 " + attempt + " 次重试...", false);
+        }
         new Thread(new Runnable() {
             @Override
             public void run() {
                 try {
+                    if (!isNetworkReady()) {
+                        Log.i(TAG, "m3u_network_not_ready, wait 3s then retry");
+                        Thread.sleep(3000);
+                        handler.post(new Runnable() {
+                            @Override
+                            public void run() {
+                                loadM3uListWithRetry(attempt + 1);
+                            }
+                        });
+                        return;
+                    }
                     HttpURLConnection conn = (HttpURLConnection) new URL(M3U_URL).openConnection();
                     conn.setConnectTimeout(10000);
                     conn.setReadTimeout(15000);
                     conn.setRequestProperty("User-Agent", "Mozilla/5.0");
                     int code = conn.getResponseCode();
-                    Log.i(TAG, "m3u_http_code=" + code);
+                    Log.i(TAG, "m3u_http_code=" + code + " attempt=" + attempt);
                     if (code != 200) {
                         throw new IOException("HTTP " + code);
                     }
@@ -1036,13 +1422,24 @@ public class MainActivity extends Activity {
                         }
                     });
                 } catch (final Exception e) {
-                    Log.e(TAG, "m3u_load_failed", e);
-                    handler.post(new Runnable() {
-                        @Override
-                        public void run() {
-                            showOverlay("频道列表加载失败: " + e.getMessage(), false);
-                        }
-                    });
+                    Log.e(TAG, "m3u_load_failed attempt=" + attempt, e);
+                    if (attempt < M3U_MAX_RETRY) {
+                        long wait = M3U_RETRY_INTERVAL_MS * (attempt + 1);
+                        final int nextAttempt = attempt + 1;
+                        handler.postDelayed(new Runnable() {
+                            @Override
+                            public void run() {
+                                loadM3uListWithRetry(nextAttempt);
+                            }
+                        }, wait);
+                    } else {
+                        handler.post(new Runnable() {
+                            @Override
+                            public void run() {
+                                showOverlay("频道列表加载失败: " + e.getMessage() + "\n点击重试按钮", true);
+                            }
+                        });
+                    }
                 }
             }
         }).start();
@@ -1425,6 +1822,7 @@ public class MainActivity extends Activity {
 
         channels.clear();
         channels.addAll(parsed);
+        for (int i = 0; i < channels.size(); i++) channels.get(i).absIndex = i;
         channelsLoaded = true;
 
         groupChannelMap.clear();
@@ -1456,9 +1854,7 @@ public class MainActivity extends Activity {
         groupAdapter.notifyDataSetChanged();
         safeNotifyChannelAdapter();
         updateMenuHeader();
-        if (autoStartOnBoot) {
-            playCurrentWithExo();
-        }
+        playCurrentWithExo();
         detectBadChannels();
     }
 
@@ -1497,29 +1893,31 @@ public class MainActivity extends Activity {
 
         if (url == null || url.isEmpty()) return;
         String userAgent = "Mozilla/5.0 (Linux; Android " + Build.VERSION.SDK_INT + ") AppleWebKit/537.36 Chrome/120.0 Mobile";
-        // Android 4.4: HttpURLConnection有已知Bug，使用OkHttp作为数据源（同TVBOX方案）
-        HlsMediaSource.Factory hlsFactory;
-        ProgressiveMediaSource.Factory progFactory;
-        if (Build.VERSION.SDK_INT < 21) {
-            OkHttpClient okClient = new OkHttpClient.Builder()
-                    .connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
-                    .readTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
+        if (sSharedOkClient == null) {
+            java.util.concurrent.TimeUnit unit = java.util.concurrent.TimeUnit.MINUTES;
+            okhttp3.ConnectionPool pool = new okhttp3.ConnectionPool(30, 15, unit);
+            okhttp3.Dispatcher dispatcher = new okhttp3.Dispatcher();
+            dispatcher.setMaxRequests(30);
+            dispatcher.setMaxRequestsPerHost(15);
+            sSharedOkClient = new OkHttpClient.Builder()
+                    .connectTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
+                    .readTimeout(180, java.util.concurrent.TimeUnit.SECONDS)
+                    .writeTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
+                    .callTimeout(0, java.util.concurrent.TimeUnit.MILLISECONDS)
                     .followRedirects(true)
                     .followSslRedirects(true)
+                    .retryOnConnectionFailure(true)
+                    .connectionPool(pool)
+                    .dispatcher(dispatcher)
+                    .pingInterval(30, java.util.concurrent.TimeUnit.SECONDS)
                     .build();
-            OkHttpDataSource.Factory okFactory = new OkHttpDataSource.Factory(okClient)
+            sSharedOkFactory = new OkHttpDataSource.Factory(sSharedOkClient)
                     .setUserAgent(userAgent);
-            hlsFactory = new HlsMediaSource.Factory(okFactory);
-            progFactory = new ProgressiveMediaSource.Factory(okFactory);
-            Log.i(TAG, "exo_datasource=okhttp sdk=" + Build.VERSION.SDK_INT);
-        } else {
-            DefaultHttpDataSource.Factory defFactory = new DefaultHttpDataSource.Factory()
-                    .setUserAgent(userAgent)
-                    .setConnectTimeoutMs(15000)
-                    .setReadTimeoutMs(15000)
-                    .setAllowCrossProtocolRedirects(true);
-            hlsFactory = new HlsMediaSource.Factory(defFactory);
-            progFactory = new ProgressiveMediaSource.Factory(defFactory);
+            sSharedHlsFactory = new HlsMediaSource.Factory(sSharedOkFactory);
+            try { sSharedHlsFactory.setAllowChunklessPreparation(true); } catch (Throwable t) {}
+            try { sSharedHlsFactory.setLoadErrorHandlingPolicy(new com.lwtdzh.yangshipinwrapper4tv.exo.HlsErrorHandlingPolicy()); } catch (Throwable t) {}
+            sSharedProgFactory = new ProgressiveMediaSource.Factory(sSharedOkFactory);
+            Log.i(TAG, "exo_datasource_shared_init sdk=" + Build.VERSION.SDK_INT);
         }
         com.google.android.exoplayer2.source.MediaSource source;
         String lowerUrl = url.toLowerCase();
@@ -1527,22 +1925,30 @@ public class MainActivity extends Activity {
         MediaItem mediaItem = MediaItem.fromUri(uri);
         if (lowerUrl.endsWith(".mp4") || lowerUrl.endsWith(".mkv") || lowerUrl.endsWith(".avi")
                 || lowerUrl.endsWith(".flv") || lowerUrl.endsWith(".webm") || lowerUrl.endsWith(".mov")) {
-            source = progFactory.createMediaSource(mediaItem);
+            source = sSharedProgFactory.createMediaSource(mediaItem);
             Log.i(TAG, "exo_source=progressive url=" + url);
         } else {
-            source = hlsFactory.createMediaSource(mediaItem);
+            source = sSharedHlsFactory.createMediaSource(mediaItem);
             Log.i(TAG, "exo_source=hls url=" + url);
         }
-        exoPlayer.setMediaSource(source);
+        try { exoPlayer.stop(); } catch (Throwable ignored) {}
+        exoPlayer.setMediaSource(source, true);
         exoPlayer.prepare();
         exoPlayer.setPlayWhenReady(true);
     }
 
     private void detectBadChannels() {
+        long totalMemBytes = java.lang.Runtime.getRuntime().maxMemory();
+        if (totalMemBytes > 0 && totalMemBytes <= 128 * 1024 * 1024) {
+            Log.i(TAG, "channel_detect_skip_low_mem_device mem=" + (totalMemBytes / (1024 * 1024)) + "MB");
+            return;
+        }
         Log.i(TAG, "channel_detect start async");
 
         final List<StreamLine> allLines = new ArrayList<>();
-        for (Channel ch : channels) {
+        int channelLimit = Math.min(50, channels.size());
+        for (int ci = 0; ci < channelLimit; ci++) {
+            Channel ch = channels.get(ci);
             for (StreamLine sl : ch.lines) {
                 allLines.add(sl);
             }
@@ -1552,7 +1958,7 @@ public class MainActivity extends Activity {
         new Thread(new Runnable() {
             @Override
             public void run() {
-                java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newFixedThreadPool(16);
+                java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newFixedThreadPool(4);
                 java.util.concurrent.CountDownLatch latch = new java.util.concurrent.CountDownLatch(allLines.size());
 
                 for (final StreamLine sl : allLines) {
@@ -1765,6 +2171,7 @@ public class MainActivity extends Activity {
         }
         channels.clear();
         channels.addAll(visible);
+        for (int i = 0; i < channels.size(); i++) channels.get(i).absIndex = i;
         groupChannelMap.clear();
         menuGroups.clear();
         for (Channel ch : visible) {
@@ -1851,12 +2258,17 @@ public class MainActivity extends Activity {
     private void applyPlaybackModeToPlayerEngine() {
         String effective = resolveEffectiveMode();
         boolean useIjk;
-        if (PLAYBACK_MODE_SW.equals(effective)) {
+        boolean api19 = Build.VERSION.SDK_INT < 21;
+        if (sIjkCrashed) {
+            useIjk = false;
+            Log.w(TAG, "playback_engine force_exo_ijk_previously_crashed sdk="
+                    + Build.VERSION.SDK_INT);
+        } else if (PLAYBACK_MODE_SW.equals(effective)) {
             useIjk = true;
         } else if (PLAYBACK_MODE_HW.equals(effective)) {
             useIjk = false;
         } else { // auto
-            useIjk = Build.VERSION.SDK_INT < 21 && IjkPlayerHelper.isAvailable();
+            useIjk = api19 && IjkPlayerHelper.isAvailable();
         }
         if (useIjk != mUseIjkPlayer) {
             mUseIjkPlayer = useIjk;
@@ -1867,6 +2279,7 @@ public class MainActivity extends Activity {
 
     private String resolveEffectiveMode() {
         if (PLAYBACK_MODE_AUTO.equals(playbackMode)) {
+            if (sIjkCrashed) return PLAYBACK_MODE_HW;
             return (Build.VERSION.SDK_INT < 21 && IjkPlayerHelper.isAvailable())
                     ? PLAYBACK_MODE_SW : PLAYBACK_MODE_HW;
         }
@@ -1952,26 +2365,74 @@ public class MainActivity extends Activity {
             return;
         }
         if (centerModule != null) centerModule.onChannelChanged();
-        int next = currentIndex;
-        for (int step = 0; step < channels.size(); step++) {
-            next = (next + delta + channels.size()) % channels.size();
-            Channel nc = channels.get(next);
-            boolean allBad = !nc.lines.isEmpty();
-            for (StreamLine sl : nc.lines) {
-                if (!sl.checked || sl.good) { allBad = false; break; }
-            }
-            if (!allBad) break;
-        }
-        currentIndex = next;
-        Log.i(TAG, "channel_change index=" + currentIndex + " name=" + channels.get(currentIndex).name);
+
         Channel curCh = channels.get(currentIndex);
-        String curGroup = (curCh.group != null && curCh.group.length() > 0) ? curCh.group : "默认";
-        selectedGroupIndex = menuGroups.indexOf(curGroup);
+        String curGroupName = (curCh.group != null && curCh.group.length() > 0) ? curCh.group : "默认";
+        int startGroupIdx = menuGroups.indexOf(curGroupName);
+        if (startGroupIdx < 0) startGroupIdx = 0;
+
+        int totalGroups = menuGroups.size();
+        Channel found = null;
+
+        for (int groupOffset = 0; groupOffset < totalGroups && found == null; groupOffset++) {
+            int groupIdx = (startGroupIdx + groupOffset * delta + totalGroups) % totalGroups;
+            String gName = menuGroups.get(groupIdx);
+            List<Channel> groupChans = groupChannelMap.get(gName);
+            if (groupChans == null || groupChans.isEmpty()) continue;
+
+            if (groupOffset == 0) {
+                int idxInGroup = findChannelIndexInGroup(groupIdx, curCh);
+                for (int s = 1; s <= groupChans.size(); s++) {
+                    int candidate = idxInGroup + s * delta;
+                    if (candidate < 0 || candidate >= groupChans.size()) break;
+                    Channel nc = groupChans.get(candidate);
+                    if (isChannelPlayable(nc)) { found = nc; break; }
+                }
+            } else {
+                if (delta > 0) {
+                    for (int i = 0; i < groupChans.size(); i++) {
+                        Channel nc = groupChans.get(i);
+                        if (isChannelPlayable(nc)) { found = nc; break; }
+                    }
+                } else {
+                    for (int i = groupChans.size() - 1; i >= 0; i--) {
+                        Channel nc = groupChans.get(i);
+                        if (isChannelPlayable(nc)) { found = nc; break; }
+                    }
+                }
+            }
+        }
+
+        if (found == null) {
+            int next = currentIndex;
+            for (int step = 0; step < channels.size(); step++) {
+                next = (next + delta + channels.size()) % channels.size();
+                Channel nc = channels.get(next);
+                if (isChannelPlayable(nc)) break;
+            }
+            found = channels.get(next);
+        }
+
+        currentIndex = channels.indexOf(found);
+        if (currentIndex < 0) currentIndex = 0;
+        Log.i(TAG, "channel_change index=" + currentIndex + " name=" + channels.get(currentIndex).name);
+        Channel ch = channels.get(currentIndex);
+        String g = (ch.group != null && ch.group.length() > 0) ? ch.group : "默认";
+        selectedGroupIndex = menuGroups.indexOf(g);
         if (selectedGroupIndex < 0) selectedGroupIndex = 0;
-        selectedChannelInGroup = findChannelIndexInGroup(selectedGroupIndex, curCh);
+        selectedChannelInGroup = findChannelIndexInGroup(selectedGroupIndex, ch);
         groupAdapter.notifyDataSetChanged();
         safeNotifyChannelAdapter();
         requestCurrentStream("channel");
+    }
+
+    private boolean isChannelPlayable(Channel nc) {
+        if (nc == null) return false;
+        boolean allBad = !nc.lines.isEmpty();
+        for (StreamLine sl : nc.lines) {
+            if (!sl.checked || sl.good) { allBad = false; break; }
+        }
+        return !allBad;
     }
 
     private void switchLine(int delta) {
@@ -2381,11 +2842,21 @@ public class MainActivity extends Activity {
         if (position < 0) position = 0;
         int total = menuGroups.size() + 2;
         if (position >= total) position = total - 1;
+        final int targetPos = position;
         if (groupRecyclerView.getLayoutManager() instanceof LinearLayoutManager) {
-            ((LinearLayoutManager) groupRecyclerView.getLayoutManager()).scrollToPositionWithOffset(position, dp(4));
+            ((LinearLayoutManager) groupRecyclerView.getLayoutManager()).scrollToPositionWithOffset(targetPos, dp(4));
         } else {
-            groupRecyclerView.scrollToPosition(position);
+            groupRecyclerView.scrollToPosition(targetPos);
         }
+        groupRecyclerView.post(new Runnable() {
+            @Override
+            public void run() {
+                RecyclerView.ViewHolder vh = groupRecyclerView.findViewHolderForAdapterPosition(targetPos);
+                if (vh != null && vh.itemView != null) {
+                    vh.itemView.requestFocus();
+                }
+            }
+        });
     }
 
     private void scrollChannelToPosition(int position) {
@@ -2414,11 +2885,21 @@ public class MainActivity extends Activity {
             if (position < 0) position = 0;
             int total = channelItemAdapter.getItemCount();
             if (position >= total) position = Math.max(0, total - 1);
+            final int targetPos = position;
             if (channelRecyclerView.getLayoutManager() instanceof LinearLayoutManager) {
-                ((LinearLayoutManager) channelRecyclerView.getLayoutManager()).scrollToPositionWithOffset(position, dp(4));
+                ((LinearLayoutManager) channelRecyclerView.getLayoutManager()).scrollToPositionWithOffset(targetPos, dp(4));
             } else {
-                channelRecyclerView.scrollToPosition(position);
+                channelRecyclerView.scrollToPosition(targetPos);
             }
+            channelRecyclerView.post(new Runnable() {
+                @Override
+                public void run() {
+                    RecyclerView.ViewHolder vh = channelRecyclerView.findViewHolderForAdapterPosition(targetPos);
+                    if (vh != null && vh.itemView != null) {
+                        vh.itemView.requestFocus();
+                    }
+                }
+            });
         }
     }
 
@@ -2564,7 +3045,12 @@ public class MainActivity extends Activity {
         } else if (!isGroup) {
             safeNotifyChannelAdapter();
         }
-        groupAdapter.notifyDataSetChanged();
+        if (Build.VERSION.SDK_INT >= 20) {
+            groupAdapter.notifyItemChanged(oldIdx);
+            groupAdapter.notifyItemChanged(selectedGroupIndex);
+        } else {
+            groupAdapter.notifyDataSetChanged();
+        }
         scrollGroupToPosition(selectedGroupIndex);
         resetMenuAutoHide();
     }
@@ -2573,9 +3059,15 @@ public class MainActivity extends Activity {
         List<Channel> chans = getCurrentGroupChannels();
         int total = chans.size();
         if (total <= 0) return;
+        int oldSel = selectedChannelInGroup;
         selectedChannelInGroup = (selectedChannelInGroup + delta + total) % total;
+        if (Build.VERSION.SDK_INT >= 20) {
+            channelItemAdapter.notifyItemChanged(oldSel);
+            channelItemAdapter.notifyItemChanged(selectedChannelInGroup);
+        } else {
+            safeNotifyChannelAdapter();
+        }
         scrollChannelToPosition(selectedChannelInGroup);
-        safeNotifyChannelAdapter();
         resetMenuAutoHide();
     }
 
@@ -2695,6 +3187,7 @@ public class MainActivity extends Activity {
                                     + " | VIP: " + (ruyiApi.isVip() ? "Yes" : "No")
                                     + " | Dev: " + ruyiApi.getDeviceId();
                             applyBlockedState(false, null);
+                            if (centerModule != null) centerModule.refreshAccountInfo();
                         } else {
                             Log.w(TAG, "ruyi_login_fail code=" + result.code + " msg=" + result.message);
                             ruyiStatusStr = "Ruyi: code=" + result.code + " msg=" + result.message;
@@ -2751,7 +3244,16 @@ public class MainActivity extends Activity {
             @Override
             public void run() {
                 try {
+                    if (versionDialogShown) {
+                        Log.i(TAG, "showVersionDialog skip_already_shown");
+                        return;
+                    }
+                    versionDialogShown = true;
                     Log.i(TAG, "showVersionDialog hasUpdate=true url=" + info.updateUrl + " compel=" + info.compel);
+                    if (isFinishing()) {
+                        Log.w(TAG, "showVersionDialog SKIP_ACTIVITY_FINISHING");
+                        return;
+                    }
                     AlertDialog.Builder builder = new AlertDialog.Builder(MainActivity.this);
                     builder.setTitle("发现新版本 v" + info.remoteVersion);
                     StringBuilder msg = new StringBuilder();
@@ -2778,7 +3280,9 @@ public class MainActivity extends Activity {
                         });
                     }
                     builder.setCancelable(!info.compel);
+                    Log.i(TAG, "showVersionDialog BEFORE_SHOW");
                     builder.show();
+                    Log.i(TAG, "showVersionDialog AFTER_SHOW");
                 } catch (Exception e) {
                     Log.w(TAG, "showVersionDialog error: " + e.getMessage());
                 }
@@ -2794,90 +3298,292 @@ public class MainActivity extends Activity {
         }
     }
 
+    private File getUpdateDownloadDir() {
+        File dir;
+        if (Build.VERSION.SDK_INT >= 29) {
+            dir = new File(getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS), "apk_updates");
+        } else {
+            dir = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "apk_updates");
+        }
+        if (!dir.exists()) dir.mkdirs();
+        return dir;
+    }
+
+    private String buildTargetApkName(String url) {
+        String suffix = "";
+        try {
+            int q = url.indexOf('?');
+            String clean = q > 0 ? url.substring(0, q) : url;
+            int sl = clean.lastIndexOf('/');
+            if (sl > 0) suffix = clean.substring(sl + 1);
+        } catch (Exception ignored) {}
+        if (suffix == null || suffix.isEmpty() || !suffix.endsWith(".apk")) {
+            try {
+                String md5 = Integer.toHexString(url.hashCode());
+                suffix = "update_" + md5 + ".apk";
+            } catch (Exception e) {
+                suffix = "update.apk";
+            }
+        }
+        return suffix;
+    }
+
+    private File findExistingApk(String url, long expectedSize) {
+        File dir = getUpdateDownloadDir();
+        String targetName = buildTargetApkName(url);
+        File target = new File(dir, targetName);
+        if (target.exists()) {
+            if (expectedSize > 0 && target.length() == expectedSize) {
+                Log.i(TAG, "update_found_existing_apk size=" + target.length() + " file=" + target.getAbsolutePath());
+                return target;
+            }
+            if (expectedSize <= 0 && target.length() > 1024 * 1024) {
+                Log.i(TAG, "update_found_existing_apk (no size check) file=" + target.getAbsolutePath());
+                return target;
+            }
+        }
+        File[] olds = dir.listFiles(new java.io.FileFilter() {
+            @Override
+            public boolean accept(File f) {
+                return f.getName().endsWith(".apk") && !f.getName().endsWith(".part");
+            }
+        });
+        if (olds != null) {
+            for (File f : olds) {
+                if (expectedSize > 0 && f.length() == expectedSize) {
+                    Log.i(TAG, "update_found_matching_size_apk size=" + f.length() + " file=" + f.getAbsolutePath());
+                    return f;
+                }
+            }
+        }
+        return null;
+    }
+
     private void downloadAndInstall(final RuyiApi.VersionInfo info) {
+        Log.i(TAG, "downloadAndInstall ENTER url=" + info.updateUrl);
         if (info.updateUrl == null || info.updateUrl.length() == 0) {
             Log.w(TAG, "updateUrl is empty, cannot download");
             return;
         }
-        if (overlayText != null) {
-            handler.post(new Runnable() {
-                @Override
-                public void run() {
-                    if (overlayText != null) {
-                        overlayText.setText("\n\n\n\n\n\n\n\n\n\n正在下载新版本，请稍候...\n");
-                        overlayText.setBackgroundColor(Color.parseColor("#CC000000"));
-                        overlayText.setTextColor(Color.WHITE);
-                        overlayText.setGravity(Gravity.CENTER);
-                    }
-                }
-            });
+
+        if (downloadingNow) {
+            Log.i(TAG, "downloadAndInstall SKIP_ALREADY_DOWNLOADING");
+            return;
         }
+        downloadingNow = true;
 
         new Thread(new Runnable() {
             @Override
             public void run() {
                 HttpURLConnection conn = null;
+                File targetFile = null;
+                File partFile = null;
                 BufferedInputStream bis = null;
                 FileOutputStream fos = null;
-                File outputFile = null;
                 try {
+                    File downloadDir = getUpdateDownloadDir();
+                    String targetName = buildTargetApkName(info.updateUrl);
+                    targetFile = new File(downloadDir, targetName);
+
+                    File existing = findExistingApk(info.updateUrl, -1);
+                    if (existing != null && existing.exists()) {
+                        final File apkFile = existing;
+                        Log.i(TAG, "update_found_existing_skip_network=" + apkFile.getAbsolutePath() + " size=" + apkFile.length());
+                        handler.post(new Runnable() {
+                            @Override
+                            public void run() {
+                                showInstallConfirmDialog(apkFile);
+                            }
+                        });
+                        return;
+                    }
+
+                    Log.i(TAG, "update_no_local_apk_connecting_server...");
                     URL url = new URL(info.updateUrl);
                     conn = (HttpURLConnection) url.openConnection();
-                    conn.setConnectTimeout(15000);
+                    conn.setConnectTimeout(8000);
                     conn.setReadTimeout(15000);
                     conn.setRequestMethod("GET");
+                    conn.setInstanceFollowRedirects(true);
                     conn.connect();
                     int responseCode = conn.getResponseCode();
-                    if (responseCode != 200) {
+                    Log.i(TAG, "update_server_response code=" + responseCode);
+                    if (responseCode != 200 && responseCode != 206) {
                         throw new IOException("HTTP " + responseCode);
                     }
-                    int contentLength = conn.getContentLength();
-                    File downloadDir;
-                    if (Build.VERSION.SDK_INT >= 29) {
-                        downloadDir = new File(getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS), "apk_updates");
-                    } else {
-                        downloadDir = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "apk_updates");
+                    long contentLength = -1;
+                    String clHeader = conn.getHeaderField("Content-Length");
+                    if (clHeader != null) {
+                        try { contentLength = Long.parseLong(clHeader); } catch (NumberFormatException ignored) {}
                     }
-                    if (!downloadDir.exists()) downloadDir.mkdirs();
-                    outputFile = new File(downloadDir, "update_" + System.currentTimeMillis() + ".apk");
-                    bis = new BufferedInputStream(conn.getInputStream());
-                    fos = new FileOutputStream(outputFile);
-                    byte[] buf = new byte[8192];
-                    long total = 0;
-                    long startTime = System.currentTimeMillis();
-                    while (true) {
-                        int read = bis.read(buf);
-                        if (read == -1) break;
-                        fos.write(buf, 0, read);
-                        total += read;
-                        long elapsed = System.currentTimeMillis() - startTime;
-                        if (elapsed > 500) {
-                            final int pct = contentLength > 0 ? (int)(total * 100 / contentLength) : -1;
-                            final long kbDone = total / 1024;
-                            final long kbTotal = contentLength / 1024;
-                            handler.post(new Runnable() {
-                                @Override
-                                public void run() {
-                                    if (overlayText != null) {
-                                        String text = "\n\n\n\n\n\n\n\n\n\n下载中... " + kbDone + "KB";
-                                        if (pct >= 0) text += " (" + pct + "%)";
-                                        overlayText.setText(text + "\n");
-                                    }
-                                }
-                            });
-                            startTime = System.currentTimeMillis();
+                    if (contentLength < 0) {
+                        int clInt = conn.getContentLength();
+                        contentLength = clInt > 0 ? clInt : -1;
+                    }
+                    Log.i(TAG, "update_server_content_length=" + contentLength);
+                    conn.disconnect();
+                    conn = null;
+
+                    existing = findExistingApk(info.updateUrl, contentLength);
+                    if (existing != null && existing.exists() && existing.length() >= contentLength - 1024) {
+                        final File apkFile = existing;
+                        Log.i(TAG, "update_skip_download_after_check=" + apkFile.getAbsolutePath() + " size=" + apkFile.length());
+                        handler.post(new Runnable() {
+                            @Override
+                            public void run() {
+                                showInstallConfirmDialog(apkFile);
+                            }
+                        });
+                        return;
+                    }
+
+                    partFile = new File(downloadDir, targetName + ".part");
+                    long downloaded = partFile.exists() ? partFile.length() : 0;
+                    long totalSize = contentLength > 0 ? contentLength : -1;
+                    if (downloaded > 0 && totalSize > 0 && downloaded >= totalSize - 1024) {
+                        if (!partFile.renameTo(targetFile)) {
+                            copyFile(partFile, targetFile);
                         }
+                        if (partFile.exists()) {
+                            partFile.delete();
+                        }
+                        final File apkFile = targetFile;
+                        Log.i(TAG, "update_part_already_complete renamed=" + apkFile.getAbsolutePath());
+                        handler.post(new Runnable() {
+                            @Override
+                            public void run() {
+                                showInstallConfirmDialog(apkFile);
+                            }
+                        });
+                        return;
                     }
-                    fos.flush();
-                    Log.i(TAG, "APK downloaded size=" + total + " file=" + outputFile.getAbsolutePath());
-                    final File apkFile = outputFile;
+
+                    final long fTotalSize = totalSize;
+                    final long fResumeFrom = downloaded;
                     handler.post(new Runnable() {
                         @Override
                         public void run() {
-                            if (overlayText != null) {
-                                overlayText.setText("");
-                                overlayText.setBackgroundColor(Color.TRANSPARENT);
+                            if (fResumeFrom > 0) {
+                                showUpdatePanel("断点续传中 " + (fResumeFrom / 1024) + "KB ...");
+                            } else {
+                                showUpdatePanel("正在连接服务器...");
                             }
+                        }
+                    });
+
+                    conn = (HttpURLConnection) url.openConnection();
+                    conn.setConnectTimeout(15000);
+                    conn.setReadTimeout(20000);
+                    conn.setRequestMethod("GET");
+                    conn.setInstanceFollowRedirects(true);
+                    if (downloaded > 0) {
+                        conn.setRequestProperty("Range", "bytes=" + downloaded + "-");
+                    }
+                    conn.connect();
+                    responseCode = conn.getResponseCode();
+                    if (downloaded > 0 && responseCode == 206) {
+                        Log.i(TAG, "update_resume_supported resumeFrom=" + downloaded);
+                        String clHeader2 = conn.getHeaderField("Content-Length");
+                        long cl = -1;
+                        if (clHeader2 != null) { try { cl = Long.parseLong(clHeader2); } catch (NumberFormatException ignored) {} }
+                        if (cl > 0 && totalSize < 0) totalSize = downloaded + cl;
+                        fos = new FileOutputStream(partFile, true);
+                    } else if (responseCode == 200) {
+                        if (downloaded > 0) {
+                            Log.i(TAG, "update_resume_not_supported restart_from_zero");
+                            downloaded = 0;
+                            if (partFile.exists()) partFile.delete();
+                        }
+                        String clHeader3 = conn.getHeaderField("Content-Length");
+                        if (clHeader3 != null) { try { totalSize = Long.parseLong(clHeader3); } catch (NumberFormatException ignored) {} }
+                        if (totalSize < 0) {
+                            int clInt2 = conn.getContentLength();
+                            totalSize = clInt2 > 0 ? clInt2 : -1;
+                        }
+                        fos = new FileOutputStream(partFile, false);
+                    } else {
+                        throw new IOException("HTTP " + responseCode);
+                    }
+
+                    bis = new BufferedInputStream(conn.getInputStream(), 65536);
+                    byte[] buf = new byte[8192];
+                    long totalNow = downloaded;
+                    long lastUpdate = 0;
+                    while (true) {
+                        if (downloadCancelled) {
+                            Log.i(TAG, "update_cancelled_while_downloading");
+                            break;
+                        }
+                        int read = bis.read(buf);
+                        if (read == -1) break;
+                        fos.write(buf, 0, read);
+                        totalNow += read;
+                        long now = System.currentTimeMillis();
+                        if (now - lastUpdate > 400) {
+                            final long fDownloaded = totalNow;
+                            final int pct = totalSize > 0 ? (int)(fDownloaded * 100 / totalSize) : -1;
+                            final long kbDone = fDownloaded / 1024;
+                            final long kbTotal = totalSize / 1024;
+                            final String progressText;
+                            if (pct >= 0) {
+                                progressText = "下载中 " + pct + "% (" + kbDone + "/" + kbTotal + "KB)";
+                            } else {
+                                progressText = "下载中 " + kbDone + "KB";
+                            }
+                            handler.post(new Runnable() {
+                                @Override
+                                public void run() {
+                                    updateProgressPanel(pct, progressText);
+                                }
+                            });
+                            lastUpdate = now;
+                        }
+                    }
+                    fos.flush();
+
+                    if (downloadCancelled) {
+                        Log.i(TAG, "update_cancelled_partial saved=" + totalNow);
+                        handler.post(new Runnable() {
+                            @Override
+                            public void run() {
+                                hideUpdatePanel();
+                            }
+                        });
+                        return;
+                    }
+
+                    if (totalSize > 0 && totalNow < totalSize - 1024) {
+                        Log.w(TAG, "update_incomplete_download saved=" + totalNow + " expected=" + totalSize);
+                        final long fSaved = totalNow;
+                        final long fExpected = totalSize;
+                        handler.post(new Runnable() {
+                            @Override
+                            public void run() {
+                                hideUpdatePanel();
+                                AlertDialog.Builder builder = new AlertDialog.Builder(MainActivity.this);
+                                builder.setTitle("下载中断");
+                                builder.setMessage("检测到下载未完成，下次将自动断点续传。\n\n已保存 " + (fSaved/1024) + "KB / " + (fExpected/1024) + "KB");
+                                builder.setPositiveButton("好的", null);
+                                builder.show();
+                            }
+                        });
+                        return;
+                    }
+
+                    if (!partFile.renameTo(targetFile)) {
+                        copyFile(partFile, targetFile);
+                    }
+                    if (partFile.exists()) {
+                        partFile.delete();
+                    }
+                    cleanOldApks(downloadDir, targetFile);
+
+                    Log.i(TAG, "update_download_complete file=" + targetFile.getAbsolutePath() + " size=" + targetFile.length());
+                    final File apkFile = targetFile;
+                    handler.post(new Runnable() {
+                        @Override
+                        public void run() {
+                            hideUpdatePanel();
                             showInstallConfirmDialog(apkFile);
                         }
                     });
@@ -2887,10 +3593,7 @@ public class MainActivity extends Activity {
                     handler.post(new Runnable() {
                         @Override
                         public void run() {
-                            if (overlayText != null) {
-                                overlayText.setText("");
-                                overlayText.setBackgroundColor(Color.TRANSPARENT);
-                            }
+                            hideUpdatePanel();
                             AlertDialog.Builder builder = new AlertDialog.Builder(MainActivity.this);
                             builder.setTitle("下载失败");
                             builder.setMessage("无法下载更新包: " + errMsg + "\n\n是否改用浏览器下载?");
@@ -2918,13 +3621,49 @@ public class MainActivity extends Activity {
                     try { if (fos != null) fos.close(); } catch (Exception ignored) {}
                     try { if (bis != null) bis.close(); } catch (Exception ignored) {}
                     try { if (conn != null) conn.disconnect(); } catch (Exception ignored) {}
+                    downloadingNow = false;
                 }
             }
         }).start();
     }
 
+    private void copyFile(File src, File dst) throws IOException {
+        BufferedInputStream bis = new BufferedInputStream(new java.io.FileInputStream(src));
+        BufferedOutputStream bos = new BufferedOutputStream(new FileOutputStream(dst));
+        byte[] buf = new byte[8192];
+        int n;
+        while ((n = bis.read(buf)) > 0) bos.write(buf, 0, n);
+        bis.close();
+        bos.close();
+    }
+
+    private void cleanOldApks(File dir, File keep) {
+        File[] files = dir.listFiles();
+        if (files == null) return;
+        for (File f : files) {
+            if (f.equals(keep)) continue;
+            if (f.getName().endsWith(".apk") || f.getName().endsWith(".part")) {
+                try {
+                    f.delete();
+                    Log.d(TAG, "update_clean_old=" + f.getName());
+                } catch (Exception ignored) {}
+            }
+        }
+    }
+
     private void showInstallConfirmDialog(final File apkFile) {
-        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        Log.i(TAG, "showInstallConfirmDialog CALLED file=" + apkFile.getAbsolutePath() + " exists=" + apkFile.exists() + " size=" + apkFile.length());
+        if (apkFile == null || !apkFile.exists() || apkFile.length() < 1024 * 1024) {
+            Log.w(TAG, "showInstallConfirmDialog invalid apk file");
+            return;
+        }
+        if (isFinishing()) {
+            Log.w(TAG, "showInstallConfirmDialog activity finishing, skip dialog, direct install");
+            installApk(apkFile);
+            return;
+        }
+        try {
+            AlertDialog.Builder builder = new AlertDialog.Builder(this);
         builder.setTitle("下载完成");
         builder.setMessage("新版本已下载就绪，是否立即安装?");
         builder.setPositiveButton("立即安装", new android.content.DialogInterface.OnClickListener() {
@@ -2942,10 +3681,24 @@ public class MainActivity extends Activity {
         });
         builder.setCancelable(true);
         builder.show();
+        } catch (Exception e) {
+            Log.e(TAG, "showInstallConfirmDialog error: " + e.getMessage());
+            installApk(apkFile);
+        }
     }
 
     private void installApk(File apkFile) {
         try {
+            if (apkFile == null || !apkFile.exists()) {
+                Log.e(TAG, "installApk SKIP_FILE_NOT_EXISTS");
+                return;
+            }
+            long sz = apkFile.length();
+            if (sz < 1024 * 1024) {
+                Log.e(TAG, "installApk SKIP_FILE_TOO_SMALL size=" + sz);
+                return;
+            }
+            Log.i(TAG, "installApk ENTER file=" + apkFile.getAbsolutePath() + " size=" + sz);
             Intent intent = new Intent(Intent.ACTION_VIEW);
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
             Uri apkUri;
@@ -3001,9 +3754,9 @@ public class MainActivity extends Activity {
         }
         releasePlayer();
         if (mUseIjkPlayer) {
-            if (mIjkTextureView != null) {
-                mIjkTextureView.setVisibility(View.GONE);
-                mIjkTextureView = null;
+            if (mIjkSurfaceView != null) {
+                mIjkSurfaceView.setVisibility(View.GONE);
+                mIjkSurfaceView = null;
             }
         } else {
             if (playerView != null) {
@@ -3070,6 +3823,7 @@ public class MainActivity extends Activity {
         final String group;
         final List<StreamLine> lines = new ArrayList<>();
         int currentLineIndex = 0;
+        int absIndex = 0;
 
         Channel(String name, String group) {
             this.name = name;
@@ -3231,8 +3985,7 @@ public class MainActivity extends Activity {
                 latencyView.setTextColor(0xFF555555);
             }
 
-            int absIdx = channels.indexOf(ch);
-            if (absIdx < 0) absIdx = 0;
+            int absIdx = ch.absIndex;
             if (position == selectedChannelInGroup && !focusOnGroupSide) {
                 bg.setColor(0xFF1D6FFF);
                 numView.setTextColor(0xFFFFFFFF);
@@ -3311,8 +4064,7 @@ public class MainActivity extends Activity {
         public void onBindViewHolder(VH holder, final int position) {
             if (position < 0 || position >= items.size()) return;
             Channel ch = items.get(position);
-            int absIdx = channels.indexOf(ch);
-            if (absIdx < 0) absIdx = 0;
+            int absIdx = ch.absIndex;
 
             holder.numView.setText(String.format("%03d", position + 1));
             holder.numView.setTextColor(0xFFBBBBBB);
@@ -3506,6 +4258,40 @@ public class MainActivity extends Activity {
                 default:
                     return true;
             }
+        }
+    }
+
+    private void scheduleBootAlarm() {
+        try {
+            Intent intent = new Intent(this, MainActivity.class);
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+            PendingIntent pi = PendingIntent.getActivity(this, 10001, intent,
+                    PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+            AlarmManager am = (AlarmManager) getSystemService(ALARM_SERVICE);
+            if (am != null) {
+                long trigger = SystemClock.elapsedRealtime() + 5000;
+                am.setRepeating(AlarmManager.ELAPSED_REALTIME_WAKEUP,
+                        trigger, 60000L, pi);
+                Log.i("YSPTV", "scheduleBootAlarm: alarm set every 60s");
+            }
+        } catch (Throwable t) {
+            Log.e("YSPTV", "scheduleBootAlarm failed", t);
+        }
+    }
+
+    private void ensureBootReceiverEnabled() {
+        try {
+            ComponentName cn = new ComponentName(this, BootReceiver.class);
+            PackageManager pm = getPackageManager();
+            int state = pm.getComponentEnabledSetting(cn);
+            if (state != PackageManager.COMPONENT_ENABLED_STATE_ENABLED) {
+                pm.setComponentEnabledSetting(cn,
+                        PackageManager.COMPONENT_ENABLED_STATE_ENABLED,
+                        PackageManager.DONT_KILL_APP);
+                Log.i("YSPTV", "ensureBootReceiverEnabled: re-enabled BootReceiver (was=" + state + ")");
+            }
+        } catch (Throwable t) {
+            Log.e("YSPTV", "ensureBootReceiverEnabled failed", t);
         }
     }
 }

@@ -1,0 +1,24 @@
+﻿--------- beginning of system
+10-11 10:40:25.726 I/ActivityManager(  389): START u0 {flg=0x14000000 cmp=com.lwtdzh.yangshipinwrapper4tv/.MainActivity} from uid 10060
+10-11 10:40:29.895 I/ActivityManager(  389): START u0 {flg=0x10000000 cmp=com.lwtdzh.yangshipinwrapper4tv/.MainActivity} from uid 0
+--------- beginning of main
+10-11 10:40:32.891 D/AudioFlinger(  141): mixer(0xf4083c00) throttle end: throttle time(19)
+10-11 10:40:35.150 D/AudioFlinger(  141): mixer(0xf4083c00) throttle end: throttle time(1)
+10-11 10:40:37.785 E/TrafficController(  120): Failed to tag the socket: Bad file descriptor, fd: -1
+10-11 10:40:37.785 I/NetworkManagementSocketTagger(  914): tagSocketFd(57, 32769, -1) failed with errno-115
+10-11 10:40:39.953 D/AudioFlinger(  141): mixer(0xf4083c00) throttle end: throttle time(1)
+10-11 10:40:44.225 E/Netd    (  120): Failed to dump IPv4 sockets struct tcp_info: No such file or directory
+10-11 10:40:44.225 E/TcpSocketMonitor(  120): Failed to poll TCP socket info: No such file or directory
+10-11 10:40:47.834 E/TrafficController(  120): Failed to tag the socket: Bad file descriptor, fd: -1
+10-11 10:40:47.834 I/NetworkManagementSocketTagger(  914): tagSocketFd(57, 32769, -1) failed with errno-115
+10-11 10:40:50.831 D/AudioFlinger(  141): mixer(0xf4083c00) throttle end: throttle time(1)
+10-11 10:40:52.587 D/AudioFlinger(  141): mixer(0xf4083c00) throttle end: throttle time(1)
+10-11 10:40:57.875 E/TrafficController(  120): Failed to tag the socket: Bad file descriptor, fd: -1
+10-11 10:40:57.875 I/NetworkManagementSocketTagger(  914): tagSocketFd(57, 32769, -1) failed with errno-115
+10-11 10:41:01.881 D/AudioFlinger(  141): mixer(0xf4083c00) throttle end: throttle time(4)
+10-11 10:41:02.033 D/AudioFlinger(  141): mixer(0xf4083c00) throttle end: throttle time(1)
+10-11 10:41:05.228 I/chatty  (  141): uid=1041(audioserver) AudioOut_D identical 2 lines
+10-11 10:41:07.791 D/AudioFlinger(  141): mixer(0xf4083c00) throttle end: throttle time(1)
+10-11 10:41:07.925 E/TrafficController(  120): Failed to tag the socket: Bad file descriptor, fd: -1
+10-11 10:41:07.925 I/NetworkManagementSocketTagger(  914): tagSocketFd(57, 32769, -1) failed with errno-115
+10-11 10:41:08.879 D/AudioFlinger(  141): mixer(0xf4083c00) throttle end: throttle time(6)

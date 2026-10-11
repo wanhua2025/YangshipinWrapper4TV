@@ -2,12 +2,15 @@ package com.lwtdzh.yangshipinwrapper4tv;
 
 import android.graphics.SurfaceTexture;
 import android.view.Surface;
+import android.view.SurfaceHolder;
+import android.view.SurfaceView;
 import android.view.TextureView;
 
 import java.lang.reflect.Field;
 import java.util.HashMap;
 import java.util.Map;
 
+import tv.danmaku.ijk.media.player.IMediaPlayer;
 import tv.danmaku.ijk.media.player.IjkLibLoader;
 import tv.danmaku.ijk.media.player.IjkMediaPlayer;
 import xyz.doikki.videoplayer.ijk.IjkPlayer;
@@ -26,13 +29,16 @@ public class IjkPlayerHelper {
     private static boolean sLibLoaded = false;
     private static boolean sLibAvailable = false;
 
-    private IjkPlayer mPlayer;
-    private TextureView mTextureView;
+    private IjkMediaPlayer mNativePlayer;
+    private SurfaceView mSurfaceView;
     private IjkPlayerCallback mCallback;
     private Surface mSurface;
     private boolean mPrepared = false;
     private boolean mSurfaceReady = false;
-    private IjkMediaPlayer mNativePlayer;
+    private boolean mUseSurfaceView = false;
+
+    private TextureView mTextureView;
+    private IjkPlayer mDoikkiPlayer;
 
     public static boolean isAvailable() {
         loadLibrariesOnce();
@@ -61,14 +67,111 @@ public class IjkPlayerHelper {
         sLibLoaded = true;
     }
 
+    public IjkPlayerHelper(SurfaceView surfaceView, IjkPlayerCallback callback) {
+        this.mSurfaceView = surfaceView;
+        this.mCallback = callback;
+        this.mUseSurfaceView = true;
+        loadLibrariesOnce();
+        initNativePlayer();
+    }
+
     public IjkPlayerHelper(TextureView textureView, IjkPlayerCallback callback) {
         this.mTextureView = textureView;
         this.mCallback = callback;
+        this.mUseSurfaceView = false;
         loadLibrariesOnce();
-        mPlayer = new IjkPlayer(textureView.getContext());
-        mPlayer.initPlayer();
+        mDoikkiPlayer = new IjkPlayer(textureView.getContext());
+        mDoikkiPlayer.initPlayer();
+        setupDoikkiListeners();
         applyLiveOptimizations();
-        mPlayer.setPlayerEventListener(new AbstractPlayer.PlayerEventListener() {
+        setupTextureViewListener();
+    }
+
+    private void initNativePlayer() {
+        try {
+            mNativePlayer = new IjkMediaPlayer();
+            applyLiveOptimizations();
+            mNativePlayer.setOnPreparedListener(new IMediaPlayer.OnPreparedListener() {
+                @Override
+                public void onPrepared(IMediaPlayer mp) {
+                    mPrepared = true;
+                    if (mCallback != null) mCallback.onPrepared();
+                }
+            });
+            mNativePlayer.setOnErrorListener(new IMediaPlayer.OnErrorListener() {
+                @Override
+                public boolean onError(IMediaPlayer mp, int what, int extra) {
+                    if (mCallback != null) mCallback.onError("ijk error what=" + what + " extra=" + extra);
+                    return true;
+                }
+            });
+            mNativePlayer.setOnInfoListener(new IMediaPlayer.OnInfoListener() {
+                @Override
+                public boolean onInfo(IMediaPlayer mp, int what, int extra) {
+                    if (mCallback != null) mCallback.onInfo(what, extra);
+                    return true;
+                }
+            });
+            mNativePlayer.setOnCompletionListener(new IMediaPlayer.OnCompletionListener() {
+                @Override
+                public void onCompletion(IMediaPlayer mp) {
+                    if (mCallback != null) mCallback.onCompletion();
+                }
+            });
+            mNativePlayer.setOnVideoSizeChangedListener(new IMediaPlayer.OnVideoSizeChangedListener() {
+                @Override
+                public void onVideoSizeChanged(IMediaPlayer mp, int width, int height,
+                        int sarNum, int sarDen) {
+                    if (mCallback != null) mCallback.onVideoSizeChanged(width, height);
+                }
+            });
+            if (mSurfaceView != null) {
+                SurfaceHolder holder = mSurfaceView.getHolder();
+                holder.addCallback(new SurfaceHolder.Callback() {
+                    @Override
+                    public void surfaceCreated(SurfaceHolder holder) {
+                        mSurface = holder.getSurface();
+                        mSurfaceReady = true;
+                        if (mNativePlayer != null) {
+                            try {
+                                mNativePlayer.setSurface(mSurface);
+                            } catch (Throwable ignored) {}
+                        }
+                    }
+
+                    @Override
+                    public void surfaceChanged(SurfaceHolder holder, int format, int width, int height) {
+                        if (mNativePlayer != null) {
+                            try {
+                                mNativePlayer.setSurface(holder.getSurface());
+                            } catch (Throwable ignored) {}
+                        }
+                    }
+
+                    @Override
+                    public void surfaceDestroyed(SurfaceHolder holder) {
+                        mSurfaceReady = false;
+                        if (mSurface != null) {
+                            mSurface.release();
+                            mSurface = null;
+                        }
+                    }
+                });
+                if (mSurfaceView.getHolder().getSurface() != null
+                        && mSurfaceView.getHolder().getSurface().isValid()) {
+                    mSurface = mSurfaceView.getHolder().getSurface();
+                    mSurfaceReady = true;
+                    mNativePlayer.setSurface(mSurface);
+                }
+            }
+        } catch (Throwable th) {
+            th.printStackTrace();
+        }
+    }
+
+    private void setupDoikkiListeners() {
+        if (mDoikkiPlayer == null) return;
+        mDoikkiPlayer.setPlayerEventListener(new AbstractPlayer.PlayerEventListener() {
             @Override
             public void onPrepared() {
                 mPrepared = true;
@@ -95,22 +198,24 @@ public class IjkPlayerHelper {
                 if (mCallback != null) mCallback.onVideoSizeChanged(width, height);
             }
         });
-        // 使用 SurfaceTextureListener 替代 OnLayoutChangeListener
-        // 修复 Android 4.4 上 getSurfaceTexture() 返回 null 导致的崩溃
+    }
+
+    private void setupTextureViewListener() {
+        if (mTextureView == null) return;
         mTextureView.setSurfaceTextureListener(new TextureView.SurfaceTextureListener() {
             @Override
             public void onSurfaceTextureAvailable(SurfaceTexture surfaceTexture, int width, int height) {
                 mSurface = new Surface(surfaceTexture);
                 mSurfaceReady = true;
-                if (mPlayer != null) {
-                    mPlayer.setSurface(mSurface);
+                if (mDoikkiPlayer != null) {
+                    mDoikkiPlayer.setSurface(mSurface);
                 }
             }
 
             @Override
             public void onSurfaceTextureSizeChanged(SurfaceTexture surfaceTexture, int width, int height) {
-                if (mPlayer != null && mSurface != null) {
-                    mPlayer.setSurface(mSurface);
+                if (mDoikkiPlayer != null && mSurface != null) {
+                    mDoikkiPlayer.setSurface(mSurface);
                 }
             }
 
@@ -125,56 +230,62 @@ public class IjkPlayerHelper {
             }
 
             @Override
-            public void onSurfaceTextureUpdated(SurfaceTexture surfaceTexture) {
-                // no-op
-            }
+            public void onSurfaceTextureUpdated(SurfaceTexture surfaceTexture) {}
         });
-        // 兼容某些设备上 SurfaceTextureListener 不触发的问题
-        // 检查 SurfaceTexture 是否已经就绪
         SurfaceTexture existing = mTextureView.getSurfaceTexture();
         if (existing != null) {
             mSurface = new Surface(existing);
             mSurfaceReady = true;
-            if (mPlayer != null) {
-                mPlayer.setSurface(mSurface);
+            if (mDoikkiPlayer != null) {
+                mDoikkiPlayer.setSurface(mSurface);
             }
         }
     }
 
     public void playUrl(String url) {
-        if (mPlayer == null) return;
-        mPrepared = false;
-        mPlayer.reset();
-        // reset 会清除 IJK option，重新应用直播优化参数
-        applyLiveOptimizations();
-        // 只在 SurfaceTexture 已就绪时才设置 Surface
-        if (mSurface != null && mSurfaceReady) {
-            mPlayer.setSurface(mSurface);
-        } else {
-            // 尝试从 TextureView 获取 SurfaceTexture
-            SurfaceTexture st = mTextureView != null ? mTextureView.getSurfaceTexture() : null;
-            if (st != null) {
-                mSurface = new Surface(st);
-                mSurfaceReady = true;
-                mPlayer.setSurface(mSurface);
-            }
-        }
         Map<String, String> headers = new HashMap<>();
         headers.put("User-Agent", "Mozilla/5.0");
-        mPlayer.setDataSource(url, headers);
-        mPlayer.prepareAsync();
+        mPrepared = false;
+        if (mUseSurfaceView && mNativePlayer != null) {
+            try {
+                mNativePlayer.stop();
+                mNativePlayer.release();
+            } catch (Throwable ignored) {}
+            initNativePlayer();
+            applyLiveOptimizations();
+            try {
+                if (mSurface != null && mSurfaceReady) {
+                    mNativePlayer.setSurface(mSurface);
+                }
+                mNativePlayer.setDataSource(url, headers);
+                mNativePlayer.prepareAsync();
+            } catch (Throwable th) {
+                th.printStackTrace();
+                if (mCallback != null) mCallback.onError("ijk prepare error: " + th.getMessage());
+            }
+        } else if (mDoikkiPlayer != null) {
+            try {
+                mDoikkiPlayer.reset();
+                applyLiveOptimizations();
+                if (mSurface != null && mSurfaceReady) {
+                    mDoikkiPlayer.setSurface(mSurface);
+                }
+                mDoikkiPlayer.setDataSource(url, headers);
+                mDoikkiPlayer.prepareAsync();
+            } catch (Throwable th) {
+                th.printStackTrace();
+            }
+        }
     }
 
-    /**
-     * 从 doikki 的 IjkPlayer 反射拿到底层的 IjkMediaPlayer 实例
-     */
     private IjkMediaPlayer getNativeIjkPlayer() {
-        if (mPlayer == null) return null;
+        if (mUseSurfaceView) return mNativePlayer;
+        if (mDoikkiPlayer == null) return null;
         if (mNativePlayer != null) return mNativePlayer;
         try {
-            Field f = xyz.doikki.videoplayer.ijk.IjkPlayer.class.getDeclaredField("mMediaPlayer");
+            Field f = IjkPlayer.class.getDeclaredField("mMediaPlayer");
             f.setAccessible(true);
-            Object obj = f.get(mPlayer);
+            Object obj = f.get(mDoikkiPlayer);
             if (obj instanceof IjkMediaPlayer) {
                 mNativePlayer = (IjkMediaPlayer) obj;
             }
@@ -184,75 +295,82 @@ public class IjkPlayerHelper {
         return mNativePlayer;
     }
 
-    /**
-     * TVBOX 同款直播优化方案：低内存 + 丢坏帧 + 小缓冲
-     * 专为 Android 4.4 1G内存 优化，其它版本同样受益
-     */
     private void applyLiveOptimizations() {
         IjkMediaPlayer mp = getNativeIjkPlayer();
         if (mp == null) return;
         try {
-            // ======== 核心优化：丢坏帧防卡顿 ========
-            // framedrop=3 激进丢帧（跳过非参考帧+延迟过大的帧）
-            mp.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "framedrop", 3);
+            mp.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "framedrop", 1);
             mp.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "enable-accurate-seek", 0);
-
-            // ======== 限制帧率，降低CPU/GPU/内存 ========
-            mp.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "max-fps", 30);
-
-            // ======== 直播专用小缓冲（关键！1G内存不爆） ========
-            // 只缓存500ms，直播不需要大缓存防抖动
-            mp.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "max_cached_duration", 500);
+            mp.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "max_cached_duration", 5000);
             mp.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "min-frames", 1);
+            mp.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "soundtouch", 1);
+            mp.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "mediacodec", 1);
+            mp.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "mediacodec-auto-rotate", 1);
+            mp.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "mediacodec-handle-resolution-change", 1);
+            mp.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "opensles", 0);
 
-            // ======== 单线程解码，1G内存友好 ========
-            mp.setOption(IjkMediaPlayer.OPT_CATEGORY_CODEC, "threads", "1");
+            mp.setOption(IjkMediaPlayer.OPT_CATEGORY_CODEC, "threads", "2");
 
-            // ======== 立即flush不堆包 ========
             mp.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "flush_packets", 1);
-
-            // ======== 激进模式，牺牲一点画质换流畅 ========
             mp.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "safe", 0);
-
-            // ======== 网络优化 ========
             mp.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "dns_cache_clear", 1);
             mp.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "dns_cache_timeout", -1);
-
-            // ======== 直播专用：关闭无限缓冲 ========
-            mp.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "infbuf", 0);
-
-            // ======== 减少ffmpeg探测时间，加快起播 ========
-            mp.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "probesize", 256 * 1000);
-            mp.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "analyzeduration", 1 * 1000 * 1000);
-
+            mp.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "infbuf", 1);
+            mp.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "max-buffer-size", 32 * 1024 * 1024);
+            mp.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "probesize", 128 * 1000);
+            mp.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "analyzeduration", 500 * 1000);
+            mp.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "reconnect", 1);
+            mp.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "reconnect_streamed", 1);
+            mp.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "timeout", 30 * 1000 * 1000);
+            mp.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "rtsp_transport", "tcp");
         } catch (Throwable th) {
             th.printStackTrace();
         }
     }
 
     public void stop() {
-        if (mPlayer != null) {
-            mPlayer.stop();
+        if (mUseSurfaceView && mNativePlayer != null) {
+            try { mNativePlayer.stop(); } catch (Throwable ignored) {}
+        } else if (mDoikkiPlayer != null) {
+            mDoikkiPlayer.stop();
         }
     }
 
     public void release() {
-        if (mPlayer != null) {
-            mPlayer.release();
-            mPlayer = null;
+        if (mUseSurfaceView && mNativePlayer != null) {
+            try { mNativePlayer.release(); } catch (Throwable ignored) {}
+            mNativePlayer = null;
+        } else if (mDoikkiPlayer != null) {
+            mDoikkiPlayer.release();
+            mDoikkiPlayer = null;
         }
         if (mSurface != null) {
             mSurface.release();
             mSurface = null;
         }
         mSurfaceReady = false;
-        if (mTextureView != null) {
-            mTextureView.setSurfaceTextureListener(null);
-            mTextureView = null;
-        }
     }
 
     public boolean isPlaying() {
-        return mPlayer != null && mPlayer.isPlaying();
+        if (mUseSurfaceView && mNativePlayer != null) {
+            try { return mNativePlayer.isPlaying(); } catch (Throwable ignored) { return false; }
+        }
+        return mDoikkiPlayer != null && mDoikkiPlayer.isPlaying();
+    }
+
+    public void pause() {
+        if (mUseSurfaceView && mNativePlayer != null) {
+            try { mNativePlayer.pause(); } catch (Throwable ignored) {}
+        } else if (mDoikkiPlayer != null) {
+            try { mDoikkiPlayer.pause(); } catch (Throwable ignored) {}
+        }
+    }
+
+    public void start() {
+        if (mUseSurfaceView && mNativePlayer != null) {
+            try { mNativePlayer.start(); } catch (Throwable ignored) {}
+        } else if (mDoikkiPlayer != null) {
+            try { mDoikkiPlayer.start(); } catch (Throwable ignored) {}
+        }
     }
 }

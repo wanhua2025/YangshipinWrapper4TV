@@ -1,0 +1,312 @@
+﻿--------- beginning of system
+10-11 13:35:33.776   407   509 E ConnectivityService: Can't set TCP buffer sizes:java.io.FileNotFoundException: /sys/kernel/ipv4/tcp_rmem_min (No such file or directory)
+10-11 13:38:30.938   407  1640 I ActivityManager: Force stopping com.lwtdzh.yangshipinwrapper4tv appid=10063 user=0: from pid 5373
+--------- beginning of main
+10-11 13:38:30.939   664   664 E PhoneInterfaceManager: [PhoneIntfMgr] getCarrierPackageNamesForIntent: No UICC
+10-11 13:38:30.939   664   664 D CarrierSvcBindHelper: No carrier app for: 0
+10-11 13:38:31.813   407  1640 I ActivityManager: START u0 {flg=0x10000000 cmp=com.lwtdzh.yangshipinwrapper4tv/.MainActivity} from uid 0
+10-11 13:38:31.816   918   918 D FirebaseSessions: App backgrounded on com.microvirt.launcher2
+10-11 13:38:31.828  5384  5384 I Zygote  : seccomp disabled by setenforce 0
+10-11 13:38:31.828  5384  5384 D houdini : [5384] Initialize library(version: 9.0.7a_z.36020 RELEASE)... successfully.
+10-11 13:38:31.829  5384  5384 W hipinwrapper4t: Unexpected CPU variant for X86 using defaults: x86_64
+10-11 13:38:31.832  5384  5384 E hipinwrapper4t: Not starting debugger since process cannot load the jdwp agent.
+10-11 13:38:31.832   407   423 I ActivityManager: Start proc 5384:com.lwtdzh.yangshipinwrapper4tv/u0a63 for activity com.lwtdzh.yangshipinwrapper4tv/.MainActivity
+10-11 13:38:31.835   121   202 E TrafficController: Failed to set the counterSet: Bad file descriptor, fd: -1
+10-11 13:38:31.847   144   365 D gralloc_gmin: gralloc_alloc: Creating ashmem region of size 3690496
+10-11 13:38:31.880   144   365 D gralloc_gmin: gralloc_alloc: Creating ashmem region of size 3690496
+10-11 13:38:31.976  5384  5384 I YSPApp  : onCreate sdk=28
+10-11 13:38:31.986  5384  5384 I YSPTV   : scheduleBootAlarm: alarm set every 60s
+10-11 13:38:31.993   144   230 W SurfaceFlinger: Attempting to destroy on removed layer: b598b00 Sys2038:com.microvirt.launcher2/com.microvirt.launcher.Launcher#0
+10-11 13:38:32.011  5384  5384 D OpenGLRenderer: Skia GL Pipeline
+10-11 13:38:32.022  5384  5384 I YSPTV   : exo_joining_time_set=5000ms
+10-11 13:38:32.040   918   918 V FA      : AppMeasurementService is starting up.
+10-11 13:38:32.066  5384  5384 I YSPTV   : exo_renderers_factory_ready sdk=28 ffmpeg=true
+10-11 13:38:32.066  5384  5384 I YSPTV   : exo_mem_total=256MB lowMem=false
+10-11 13:38:32.071  5384  5384 I ExoPlayerImpl: Init cd9f289 [ExoPlayerLib/2.19.1] [NX809J, NX809J, Nubia, 28]
+10-11 13:38:32.076  5384  5384 I YSPTV   : video_renderers_mediacodec_added count=1
+10-11 13:38:32.076  5384  5384 I YSPTV   : ffmpeg_video_renderer_not_available_jellyfin_audio_only
+10-11 13:38:32.081  5384  5384 I YSPTV   : build_audio_renderers ffmpeg=false sdk=28 x86=true
+10-11 13:38:32.082  5384  5384 I DefaultRenderersFactory: Loaded FfmpegAudioRenderer.
+10-11 13:38:32.098  5384  5384 D YSPTV   : exo_cpu_affinity_not_available
+10-11 13:38:32.099  5384  5384 I YSPTV   : ruyi_init deviceId=tv_2e1dc7eef65ce3fd
+10-11 13:38:32.100  5384  5410 D NetworkSecurityConfig: No Network Security Config specified, using platform default
+10-11 13:38:32.129  5384  5413 D RUYI    : callApi url=http://ry.400239.com/api.php?app=10000&act=user_logon&data=b2525f1a58b0a52f0710b109239946a774d0341d0e8e1f3af1948bc8fde9876da5198c3794af48f9aed7f133e3a30ba4962bf72f53355652558390aea86df25414140fdb84699d8d1340060cd52a93b6d3&sign=43ff513be1b1855b061b47c44ebeb79c
+10-11 13:38:32.133  5384  5414 D         : HostConnection::get() New Host Connection established 0x7fc400235be0, tid 5414
+10-11 13:38:32.133  5384  5414 W         : Process pipe failed
+10-11 13:38:32.134  5384  5414 I ConfigStore: android::hardware::configstore::V1_0::ISurfaceFlingerConfigs::hasWideColorDisplay retrieved: 0
+10-11 13:38:32.134  5384  5414 I ConfigStore: android::hardware::configstore::V1_0::ISurfaceFlingerConfigs::hasHDRDisplay retrieved: 0
+10-11 13:38:32.134  5384  5414 I OpenGLRenderer: Initialized EGL, version 1.4
+10-11 13:38:32.134  5384  5414 D OpenGLRenderer: Swap behavior 1
+10-11 13:38:32.134  5384  5414 E EGL_adreno: CreateContext rcMajorVersion:3, minorVersion:0
+10-11 13:38:32.134  5384  5414 D EGL_adreno: eglCreateContext: 0x7fc3f6c52920: maj 3 min 0 rcv 3
+10-11 13:38:32.134  5384  5414 E EGL_adreno: [getAttribValue] Bad attribute idx
+10-11 13:38:32.134  5384  5414 D EGL_adreno: eglGetConfigAttrib: bad attrib 0x3339
+10-11 13:38:32.139  5384  5414 E EGL_adreno: [getAttribValue] Bad attribute idx
+10-11 13:38:32.139  5384  5414 D EGL_adreno: eglGetConfigAttrib: bad attrib 0x3339
+10-11 13:38:32.139   144   854 D gralloc_gmin: gralloc_alloc: Creating ashmem region of size 3690496
+10-11 13:38:32.140  5384  5414 D vndksupport: Loading /vendor/lib64/hw/android.hardware.graphics.mapper@2.0-impl.so from current namespace instead of sphal namespace.
+10-11 13:38:32.140  5384  5414 D vndksupport: Loading /vendor/lib64/hw/gralloc.gmin.so from current namespace instead of sphal namespace.
+10-11 13:38:32.218   144   854 D gralloc_gmin: gralloc_alloc: Creating ashmem region of size 3690496
+10-11 13:38:32.222  5384  5410 I YSPTV   : m3u_http_code=200 attempt=0
+10-11 13:38:32.223   407   430 I ActivityManager: Displayed com.lwtdzh.yangshipinwrapper4tv/.MainActivity: +400ms
+10-11 13:38:32.223   407   420 W system_server: Failed to determine oat file name for dex location /data/app/com.lwtdzh.yangshipinwrapper4tv-Fp5qekUJCaMpmqUwaR5qpA==/base.apk: Dalvik cache directory does not exist
+10-11 13:38:32.230   144   854 D gralloc_gmin: gralloc_alloc: Creating ashmem region of size 3690496
+10-11 13:38:32.233   121   202 E TrafficController: Failed to delete the counterSet: Bad file descriptor
+10-11 13:38:32.381   144   365 W SurfaceFlinger: Attempting to set client state on removed layer: Splash Screen com.lwtdzh.yangshipinwrapper4tv#0
+10-11 13:38:32.381   144   365 W SurfaceFlinger: Attempting to destroy on removed layer: Splash Screen com.lwtdzh.yangshipinwrapper4tv#0
+10-11 13:38:32.539  5384  5413 D RUYI    : callApi raw={"code":200,"msg":"a813481a46bbbf305c47a35619da54f729d531480ecc5f6ab481c9c2eee88f78e70cde25d4fc18edf286a174a2a501a7c47dbb0b433903140c96c1fbec77e54718444b858075d4c854436b15b032d0fecf169b57cf99ba2c11133e407372e8dfd933c3f63268e52213a6a877532a865bd28ee6cb906d76c8cab9288e80d51c287a9066579ba3eb5abbeefd098580f9e22046031aad042fa870ed058ba42a3bf22cb302bc2322a728f0387a83cf9889a734bd8cdb5f5a333f379181c5f962d9b70ab1d62a45d8c02a12401b7ebcaa30e4d765b5d16bc7fd249f","time":1791697113}
+10-11 13:38:32.540  5384  5384 I YSPTV   : ruyi_login_ok vip=999999999 user=auto_tv2e1dc7
+10-11 13:38:32.834  5384  5384 I YSPTV   : m3u_raw_entries=1587 unique_channels=1532 merged_multi_line=27 total_lines=1585 max_lines_per_channel=18
+10-11 13:38:32.856  5384  5384 I YSPTV   : m3u_groups count=76 order=[央视频, 卫视, 电影频道, 直播中国, 央视景观, 体育, 纪录频道, iPanda, 少儿, 上海, 云南, 内蒙古, 北京, 台湾, 吉林, 四川, 天津, 宁夏, 安徽, 山东, 山西, 广东, 广西, 新疆, 江苏, 江西, 河北, 河南, 浙江, 海南, 湖北, 湖南, 甘肃, 福建, 贵州, 辽宁, 重庆, 陕西, 青海, 香港, 黑龙江, 4K频道, APTV专享, IHOT频道, NewTV频道, 体育频道, 儿童频道, 动画频道, 咪咕央视, 咪咕赛事, 国际, 国际频道, 地方频道, 埋堆堆频道, 备用频道, 央视高清, 宠物, 影视, 教育, 数字频道, 文旅, 斗鱼影视, 日本, 未分组, 港澳代理, 港澳台频道, 点播电影, 电视剧频道, 移动IPTV, 虎牙影视, 韩国, 音乐频道, 春晚频道, B站, 斗鱼, 虎牙]
+10-11 13:38:32.857  5384  5384 I YSPTV   : exo_play index=172 name=JJ斗地主冠军杯 line=1/1 lat=? url=http://124.223.198.234:1905/relay/huya-jjworld.m3u8
+10-11 13:38:32.870  5384  5384 I YSPTV   : exo_datasource_shared_init sdk=28
+10-11 13:38:32.871  5384  5384 I YSPTV   : exo_source=hls url=http://124.223.198.234:1905/relay/huya-jjworld.m3u8
+10-11 13:38:32.879  5384  5384 I YSPTV   : exo_state_changed state=2
+10-11 13:38:32.879  5384  5384 I YSPTV   : channel_detect start async
+10-11 13:38:33.525  5384  5408 W VideoCapabilities: Unrecognized profile 4 for video/hevc
+10-11 13:38:33.526  5384  5408 I VideoCapabilities: Unsupported profile 4 for video/mp4v-es
+10-11 13:38:33.545  5384  5439 I OMXClient: IOmx service obtained
+10-11 13:38:33.545   161   277 I OMXMaster: makeComponentInstance(OMX.google.h264.decoder) in omx@1.0-service process
+10-11 13:38:33.546  5384  5438 D SurfaceUtils: connecting to surface 0x7fc3d9e81010, reason connectToSurface
+10-11 13:38:33.546  5384  5438 I MediaCodec: [OMX.google.h264.decoder] setting surface generation to 5513217
+10-11 13:38:33.546  5384  5438 D SurfaceUtils: disconnecting from surface 0x7fc3d9e81010, reason connectToSurface(reconnect)
+10-11 13:38:33.546  5384  5438 D SurfaceUtils: connecting to surface 0x7fc3d9e81010, reason connectToSurface(reconnect)
+10-11 13:38:33.546   161   277 E OMXNodeInstance: getExtensionIndex(0xf61abea0:google.h264.decoder, OMX.google.android.index.enableAndroidNativeBuffers) ERROR: UnsupportedIndex(0x8000101a)
+10-11 13:38:33.546  5384  5439 E ACodec  : [OMX.google.h264.decoder] setPortMode on output to DynamicANWBuffer failed w/ err -1010
+10-11 13:38:33.546   161   277 W OMXNodeInstance: [0xf61abea0:google.h264.decoder] component does not support metadata mode; using fallback
+10-11 13:38:33.546   161   277 D SoftVideoDecoderOMXComponent: Color Aspects preference: 1 
+10-11 13:38:33.546   161   277 E OMXNodeInstance: setConfig(0xf61abea0:google.h264.decoder, ConfigPriority(0x6f800002)) ERROR: UnsupportedIndex(0x8000101a)
+10-11 13:38:33.546  5384  5439 I ACodec  : codec does not support config priority (err -1010)
+10-11 13:38:33.546   161   277 E OMXNodeInstance: getConfig(0xf61abea0:google.h264.decoder, ConfigAndroidVendorExtension(0x6f100004)) ERROR: UnsupportedIndex(0x8000101a)
+10-11 13:38:33.546   161   277 E OMXNodeInstance: getConfig(0xf61abea0:google.h264.decoder, ??(0x7f000003)) ERROR: UnsupportedSetting(0x80001019)
+10-11 13:38:33.547   127   127 W AshmemAllocator: ashmem_create_region(1382400) returning hidl_memory(0x7f82980310f0, 1382400)
+10-11 13:38:33.548   127   127 I chatty  : uid=1000(system) allocator@1.0-s identical 14 lines
+10-11 13:38:33.548   127   127 W AshmemAllocator: ashmem_create_region(1382400) returning hidl_memory(0x7f82980310f0, 1382400)
+10-11 13:38:33.549  5384  5443 I OMXClient: IOmx service obtained
+10-11 13:38:33.549   161   277 I OMXMaster: makeComponentInstance(OMX.google.aac.decoder) in omx@1.0-service process
+10-11 13:38:33.550   161   277 E OMXNodeInstance: setConfig(0xf61abd20:google.aac.decoder, ConfigPriority(0x6f800002)) ERROR: Undefined(0x80001001)
+10-11 13:38:33.550  5384  5443 I ACodec  : codec does not support config priority (err -2147483648)
+10-11 13:38:33.550   161   277 E OMXNodeInstance: setConfig(0xf61abd20:google.aac.decoder, ConfigOperatingRate(0x6f800003)) ERROR: Undefined(0x80001001)
+10-11 13:38:33.550  5384  5443 I ACodec  : codec does not support config operating rate (err -2147483648)
+10-11 13:38:33.550   161   277 E OMXNodeInstance: getConfig(0xf61abd20:google.aac.decoder, ConfigAndroidVendorExtension(0x6f100004)) ERROR: Undefined(0x80001001)
+10-11 13:38:33.550   127   127 W AshmemAllocator: ashmem_create_region(8192) returning hidl_memory(0x7f82980310f0, 8192)
+10-11 13:38:33.550   127   127 I chatty  : uid=1000(system) allocator@1.0-s identical 2 lines
+10-11 13:38:33.550   127   127 W AshmemAllocator: ashmem_create_region(8192) returning hidl_memory(0x7f82980310f0, 8192)
+10-11 13:38:33.550   127   127 W AshmemAllocator: ashmem_create_region(32768) returning hidl_memory(0x7f82980310f0, 32768)
+10-11 13:38:33.551   127   127 I chatty  : uid=1000(system) allocator@1.0-s identical 2 lines
+10-11 13:38:33.551   127   127 W AshmemAllocator: ashmem_create_region(32768) returning hidl_memory(0x7f82980310f0, 32768)
+10-11 13:38:33.553   161  5441 D SoftVideoDecoderOMXComponent: Color Aspects preference: 1 
+10-11 13:38:33.553   161   277 E OMXNodeInstance: getConfig(0xf61abea0:google.h264.decoder, ??(0x7f000003)) ERROR: UnsupportedSetting(0x80001019)
+10-11 13:38:33.554   161  5444 I SoftAAC2: Reconfiguring decoder: 0->48000 Hz, 0->2 channels
+10-11 13:38:33.554   127   127 W AshmemAllocator: ashmem_create_region(32768) returning hidl_memory(0x7f82980310f0, 32768)
+10-11 13:38:33.554   127   127 I chatty  : uid=1000(system) allocator@1.0-s identical 2 lines
+10-11 13:38:33.554   127   127 W AshmemAllocator: ashmem_create_region(32768) returning hidl_memory(0x7f82980310f0, 32768)
+10-11 13:38:33.564  5384  5408 W hipinwrapper4t: Accessing hidden method Landroid/media/AudioTrack$Builder;->setOffloadedPlayback(Z)Landroid/media/AudioTrack$Builder; (dark greylist, linking)
+10-11 13:38:33.564  5384  5408 W hipinwrapper4t: Accessing hidden method Landroid/media/AudioTrack$Builder;->setOffloadedPlayback(Z)Landroid/media/AudioTrack$Builder; (dark greylist, linking)
+10-11 13:38:33.564   142   360 W AudioFlinger: createTrack_l(): mismatch between requested flags (00000008) and output flags (00000006)
+10-11 13:38:33.564   142   360 D AudioFlinger: Client defaulted notificationFrames to 6156 for frameCount 12312
+10-11 13:38:33.601  5384  5438 D MediaCodec: [OMX.google.h264.decoder] setting dataspace on output surface to #104
+10-11 13:38:33.606   144   854 W MapperHal: buffer descriptor with invalid usage bits 0x2000
+10-11 13:38:33.606   144   854 D gralloc_gmin: gralloc_alloc: Creating ashmem region of size 1384448
+10-11 13:38:33.617  5384  5438 D         : HostConnection::get() New Host Connection established 0x7fc3d9f50570, tid 5438
+10-11 13:38:33.626  5384  5438 D SoftwareRenderer: setting dataspace on output surface to #104
+10-11 13:38:33.626  5384  5384 I YSPTV   : exo_video_size_changed w=1280 h=720
+10-11 13:38:33.632  5384  5384 I YSPTV   : exo_state_changed state=3
+10-11 13:38:33.632  5384  5384 I YSPTV   : blackscreen_detection_started delay=4000 videoRendered=true audioRendered=false
+10-11 13:38:33.651   142   377 D AudioFlinger: mixer(0xf40034c0) throttle end: throttle time(6)
+10-11 13:38:33.826   144   854 W MapperHal: buffer descriptor with invalid usage bits 0x2000
+10-11 13:38:33.826   144   854 D gralloc_gmin: gralloc_alloc: Creating ashmem region of size 1384448
+10-11 13:38:33.893   144   854 W MapperHal: buffer descriptor with invalid usage bits 0x2000
+10-11 13:38:33.893   144   854 D gralloc_gmin: gralloc_alloc: Creating ashmem region of size 1384448
+10-11 13:38:33.898  5384  5430 D YSPTV   : line_ok lat=1014ms url=http://38.75.136.137:98/gslb/dsdqbv/cctv10hd.m3u8?auth=test2
+10-11 13:38:33.912  5384  5431 D YSPTV   : line_ok lat=1029ms url=http://74.91.26.218:82/live/cctv11hd.m3u8
+10-11 13:38:34.012  5384  5432 D YSPTV   : line_ok lat=1129ms url=http://107.150.60.122/live/cctv12hd.m3u8
+10-11 13:38:34.082   918  5390 I FA      : Application backgrounded at: timestamp_millis: 1791697112043
+10-11 13:38:34.329  5384  5429 D YSPTV   : line_ok lat=1443ms url=http://63.141.230.178:82/gslb/zbdq5.m3u8?id=cctv1hd
+10-11 13:38:34.396   142   377 D AudioFlinger: mixer(0xf40034c0) throttle end: throttle time(1)
+10-11 13:38:34.427  5384  5430 D YSPTV   : line_ok lat=529ms url=http://38.75.136.137:98/gslb/dsdqbv/cctv13hd.m3u8?auth=test2
+10-11 13:38:35.017  5384  5432 D YSPTV   : line_ok lat=1005ms url=http://204.12.221.218:8181/3m1080p/cctv15.m3u8
+10-11 13:38:35.060  5384  5429 D YSPTV   : line_ok lat=731ms url=http://207.56.13.146:81/cdnlive/cctv16.m3u8
+10-11 13:38:35.060  5384  5431 D YSPTV   : line_ok lat=1148ms url=http://198.204.228.26/live/cctv14hd.m3u8
+10-11 13:38:35.122  5384  5384 I YSPTV   : version_check_first_attempt
+10-11 13:38:35.122  5384  5384 I YSPTV   : version_check_start currentVer=2.05 ruyiApi=true
+10-11 13:38:35.123  5384  5454 D RUYI    : callApi url=http://ry.400239.com/api.php?app=10000&act=ini&data=a70c0d4214efe72b5154f453&sign=7ce22f36371faa9404bc8cacbc5bf1bc
+10-11 13:38:35.185  5384  5454 D RUYI    : callApi raw={"code":200,"msg":{"app_bb":"2.02","app_nshow":"Android 4.4-5.0 \u517c\u5bb9\u4e13\u7248\n- \u4fee\u590d\u4f4e\u7248\u672c\u8bbe\u5907\u9ed1\u5c4f\u95ee\u9898\n- \u4f18\u5316\u8f6f\u4ef6\u89e3\u7801\u517c\u5bb9\u6027","app_nurl":"http:\/\/ry.400239.com\/api.php?act=download&id=1","compel":"0","versions":[{"tag":"android44","name":"\u5b89\u53534.4\u66f4\u65b0\u4e13\u7248","version":"2.02","url":"http:\/\/ry.400239.com\/api.php?act=download&id=1","update_notes":"Android 4.4-5.0 \u517c\u5bb9\u4e13\u7248\n- \u4fee\u590d\u4f4e\u7248\u672c\u8bbe\u5907\u9ed1\u5c4f\u95ee\u9898\n- \u4f18\u5316\u8f6f\u4ef6\u89e3\u7801\u517c\u5bb9\u6027","compel":"0","min_sdk":"19","max_sdk":"20"},{"tag":"v203_1790120503","name":"v2.03 \u66f4\u65b0\u7248","version":"2.03","url":"http:\/\/ry.400239.com\/api.php?act=download&id=4","update_notes":"v2.03 \u66f4\u65b0\u65e5\u5fd7\uff1a\n1. \u4fee\u590d\u540e\u53f0\u7528\u6237\u5217\u8868\u663e\u793a\u95ee\u9898\n2. \u65b0\u589e\u5ba2\u6237\u7aef\u65e5\u5fd7\u4e0a\u4f20\u529f\u80fd\n3. \u65b0\u589e\u540e\u53f0\u7528\u6237\u63a8\u9001\u529f\u80fd\n4. \u4fee\u590d\u8def\u5f84\u8def\u7531 bug","compel":"0","min_sdk":"19","max_sdk":"0"}],"matched_channel":"android44"},"time":1791697116}
+10-11 13:38:35.185  5384  5454 D RUYI    : checkVersion code=200 msg={"app_bb":"2.02","app_nshow":"Android 4.4-5.0 兼容专版\n- 修复低版本设备黑屏问题\n- 优化软件解码兼容性","app_nurl":"http:\/\/ry.400239.com\/api.php?act=download&id=1","compel":"0","versions":[{"tag":"android44","name":"安卓4.4更新专版","version":"2.02","url":"http:\/\/ry.400239.com\/api.php?act=download&id=1","update_notes":"Android 4.4-5.0 兼容专版\n- 修复低版本设备黑屏问题\n- 优化软件解码兼容性","compel":"0","min_sdk":"19","max_sdk":"20"},{"tag":"v203_1790120503","name":"v2.03 更新版","version":"2.03","url":"http:\/\/ry.400239.com\/api.php?act=download&id=4","update_notes":"v2.03 更新日志：\n1. 修复后台用户列表显示问题\n2. 新增客户端日志上传功能\n3. 新增后台用户推送功能\n4. 修复路径路由 bug","compel":"0","min_sdk":"19","max_sdk":"0"}],"matched_channel":"android44"}
+10-11 13:38:35.185  5384  5454 I RUYI    : compareVersion step[1] v1=2.02(p1=2) vs v2=2.05(p2=5) diff=-3
+10-11 13:38:35.185  5384  5454 I RUYI    : checkVersion current=2.05 remote=2.02 hasUpdate=false compel=false
+10-11 13:38:35.185  5384  5384 I YSPTV   : version_check_result hasUpdate=false remoteVer=2.02 url=http://ry.400239.com/api.php?act=download&id=1 compel=false
+10-11 13:38:35.185  5384  5384 I YSPTV   : version_check_no_update current=2.05 remote=2.02
+10-11 13:38:35.518  5384  5432 D YSPTV   : line_ok lat=501ms url=http://204.12.221.218:8181/3m1080p/cctv2.m3u8
+10-11 13:38:36.126  5384  5431 D YSPTV   : line_ok lat=1066ms url=http://74.91.26.218:82/live/cctv4hd.m3u8
+10-11 13:38:36.482  5384  5429 D YSPTV   : line_ok lat=1422ms url=http://63.141.230.178:82/gslb/zbdq5.m3u8?id=cctv3hd
+10-11 13:38:36.696  5384  5432 D YSPTV   : line_ok lat=1178ms url=http://107.150.60.122/live/cctv5hd.m3u8
+10-11 13:38:36.988   407   486 I ActivityManager: START u0 {flg=0x14000000 cmp=com.lwtdzh.yangshipinwrapper4tv/.MainActivity} from uid 10063
+10-11 13:38:37.008  5384  5429 D YSPTV   : line_ok lat=526ms url=http://74.91.26.218:82/live/cctv7hd.m3u8
+10-11 13:38:37.284   142   377 D AudioFlinger: mixer(0xf40034c0) throttle end: throttle time(1)
+10-11 13:38:37.633  5384  5384 I YSPTV   : blackscreen_check_passed video_rendered_ok audio_optional
+10-11 13:38:37.793  5384  5432 D YSPTV   : line_ok lat=1097ms url=http://bztv.tvbus.cc:8081/cdnlive/cctv8.m3u8
+10-11 13:38:37.795  5384  5432 W YSPTV   : line_bad_net err=UnknownHostException url=http://www.lizhinas.top:1009/rtp/239.252.219.98:5140
+10-11 13:38:38.367  5384  5431 W YSPTV   : line_bad_net err=ConnectException url=http://69.30.245.50/live/cctv6.m3u8
+10-11 13:38:38.423  5384  5431 D YSPTV   : line_ok lat=56ms url=http://124.223.198.234:1905/relay/ysp-cctv4k.m3u8
+10-11 13:38:38.449  5384  5429 D YSPTV   : line_ok lat=1441ms url=http://63.141.230.178:82/gslb/zbdq5.m3u8?id=cctv9hd
+10-11 13:38:38.452  5384  5431 D YSPTV   : line_ok lat=29ms url=http://124.223.198.234:1905/631780421
+10-11 13:38:38.483  5384  5431 D YSPTV   : line_ok lat=31ms url=http://124.223.198.234:1905/608807416
+10-11 13:38:38.483  5384  5431 W YSPTV   : line_bad_net err=UnknownHostException url=http://www.lizhinas.top:1009/rtp/239.252.219.98:5140
+10-11 13:38:38.506  5384  5429 D YSPTV   : line_ok lat=57ms url=http://124.223.198.234:1905/608807419
+10-11 13:38:39.145   918   918 V FA      : onUnbind called for intent. action: com.google.android.gms.measurement.START
+10-11 13:38:39.146   918   918 V FA      : AppMeasurementService is shutting down.
+10-11 13:38:39.578  5384  5429 D YSPTV   : line_ok lat=1072ms url=http://38.75.136.137:98/gslb/dsdqbv/cctv5p.m3u8?auth=test202
+10-11 13:38:39.608  5384  5429 D YSPTV   : line_ok lat=30ms url=http://124.223.198.234:1905/641886773
+10-11 13:38:39.637  5384  5429 D YSPTV   : line_ok lat=29ms url=http://124.223.198.234:1905/641886683
+10-11 13:38:39.694  5384  5429 W YSPTV   : line_bad_http code=404 url=http://101.35.240.114:88/live.php?id=CCTV5
+10-11 13:38:40.281   121   202 E TrafficController: Failed to tag the socket: Bad file descriptor, fd: -1
+10-11 13:38:40.305  5384  5432 W YSPTV   : line_bad_net err=ConnectException url=http://vip1.xinketongxun.fun:8082/tsfile/live/1026_1.m3u8
+10-11 13:38:41.095  5384  5430 D YSPTV   : line_ok lat=6668ms url=https://live.264788.xyz/channel/cctv17?streamid=348c8c0c04a6
+10-11 13:38:41.454  5384  5432 D YSPTV   : line_ok lat=1149ms url=http://198.204.228.26/live/cetv1hd.m3u8
+10-11 13:38:42.312  5384  5430 D YSPTV   : line_ok lat=1217ms url=http://107.150.60.122/live/cetv3.m3u8
+10-11 13:38:43.489  5384  5431 W YSPTV   : line_bad_net err=SocketTimeoutException url=http://148.135.93.213/live.php?id=CCTV4
+10-11 13:38:43.587  5384  5431 D YSPTV   : line_ok lat=98ms url=http://8.138.7.223/tv/1905.php?id=LIVE8J4LTCXPI7QJ5
+10-11 13:38:43.639  5384  5431 D YSPTV   : line_ok lat=52ms url=http://8.138.7.223/tv/1905.php?id=LIVEOYY31H24H48NE
+10-11 13:38:43.699  5384  5431 D YSPTV   : line_ok lat=60ms url=http://124.223.198.234:1905/608807420
+10-11 13:38:43.745   144   854 W MapperHal: buffer descriptor with invalid usage bits 0x2000
+10-11 13:38:43.745   144   854 D gralloc_gmin: gralloc_alloc: Creating ashmem region of size 1384448
+10-11 13:38:43.757  5384  5431 W YSPTV   : line_bad_http code=404 url=http://101.35.240.114:88/live.php?id=CCTV1
+10-11 13:38:43.787  5384  5431 D YSPTV   : line_ok lat=30ms url=http://124.223.198.234:1905/624878405
+10-11 13:38:43.816  5384  5431 W YSPTV   : line_bad_http code=404 url=http://101.35.240.114:88/live.php?id=CCTV10
+10-11 13:38:43.846  5384  5431 D YSPTV   : line_ok lat=30ms url=http://124.223.198.234:1905/667987558
+10-11 13:38:44.122  5384  5384 I YSPTV   : version_check_retry_network_ready
+10-11 13:38:44.122  5384  5384 I YSPTV   : version_check_start currentVer=2.05 ruyiApi=true
+10-11 13:38:44.126  5384  5490 D RUYI    : callApi url=http://ry.400239.com/api.php?app=10000&act=ini&data=a70c0d4214efe72b5154f752&sign=1cbad424ff98c9f0f1a28ce146900397
+10-11 13:38:44.186  5384  5490 D RUYI    : callApi raw={"code":200,"msg":{"app_bb":"2.02","app_nshow":"Android 4.4-5.0 \u517c\u5bb9\u4e13\u7248\n- \u4fee\u590d\u4f4e\u7248\u672c\u8bbe\u5907\u9ed1\u5c4f\u95ee\u9898\n- \u4f18\u5316\u8f6f\u4ef6\u89e3\u7801\u517c\u5bb9\u6027","app_nurl":"http:\/\/ry.400239.com\/api.php?act=download&id=1","compel":"0","versions":[{"tag":"android44","name":"\u5b89\u53534.4\u66f4\u65b0\u4e13\u7248","version":"2.02","url":"http:\/\/ry.400239.com\/api.php?act=download&id=1","update_notes":"Android 4.4-5.0 \u517c\u5bb9\u4e13\u7248\n- \u4fee\u590d\u4f4e\u7248\u672c\u8bbe\u5907\u9ed1\u5c4f\u95ee\u9898\n- \u4f18\u5316\u8f6f\u4ef6\u89e3\u7801\u517c\u5bb9\u6027","compel":"0","min_sdk":"19","max_sdk":"20"},{"tag":"v203_1790120503","name":"v2.03 \u66f4\u65b0\u7248","version":"2.03","url":"http:\/\/ry.400239.com\/api.php?act=download&id=4","update_notes":"v2.03 \u66f4\u65b0\u65e5\u5fd7\uff1a\n1. \u4fee\u590d\u540e\u53f0\u7528\u6237\u5217\u8868\u663e\u793a\u95ee\u9898\n2. \u65b0\u589e\u5ba2\u6237\u7aef\u65e5\u5fd7\u4e0a\u4f20\u529f\u80fd\n3. \u65b0\u589e\u540e\u53f0\u7528\u6237\u63a8\u9001\u529f\u80fd\n4. \u4fee\u590d\u8def\u5f84\u8def\u7531 bug","compel":"0","min_sdk":"19","max_sdk":"0"}],"matched_channel":"android44"},"time":1791697125}
+10-11 13:38:44.187  5384  5490 D RUYI    : checkVersion code=200 msg={"app_bb":"2.02","app_nshow":"Android 4.4-5.0 兼容专版\n- 修复低版本设备黑屏问题\n- 优化软件解码兼容性","app_nurl":"http:\/\/ry.400239.com\/api.php?act=download&id=1","compel":"0","versions":[{"tag":"android44","name":"安卓4.4更新专版","version":"2.02","url":"http:\/\/ry.400239.com\/api.php?act=download&id=1","update_notes":"Android 4.4-5.0 兼容专版\n- 修复低版本设备黑屏问题\n- 优化软件解码兼容性","compel":"0","min_sdk":"19","max_sdk":"20"},{"tag":"v203_1790120503","name":"v2.03 更新版","version":"2.03","url":"http:\/\/ry.400239.com\/api.php?act=download&id=4","update_notes":"v2.03 更新日志：\n1. 修复后台用户列表显示问题\n2. 新增客户端日志上传功能\n3. 新增后台用户推送功能\n4. 修复路径路由 bug","compel":"0","min_sdk":"19","max_sdk":"0"}],"matched_channel":"android44"}
+10-11 13:38:44.187  5384  5490 I RUYI    : compareVersion step[1] v1=2.02(p1=2) vs v2=2.05(p2=5) diff=-3
+10-11 13:38:44.187  5384  5490 I RUYI    : checkVersion current=2.05 remote=2.02 hasUpdate=false compel=false
+10-11 13:38:44.187  5384  5384 I YSPTV   : version_check_result hasUpdate=false remoteVer=2.02 url=http://ry.400239.com/api.php?act=download&id=1 compel=false
+10-11 13:38:44.187  5384  5384 I YSPTV   : version_check_no_update current=2.05 remote=2.02
+10-11 13:38:44.699  5384  5429 W YSPTV   : line_bad_net err=SocketTimeoutException url=http://148.135.93.213/live.php?id=CCTV5p
+10-11 13:38:44.730  5384  5429 D YSPTV   : line_ok lat=31ms url=http://124.223.198.234:1905/673168185
+10-11 13:38:44.761  5384  5429 W YSPTV   : line_bad_http code=404 url=http://101.35.240.114:88/live.php?id=CCTV12
+10-11 13:38:44.792  5384  5429 D YSPTV   : line_ok lat=31ms url=http://124.223.198.234:1905/608807423
+10-11 13:38:44.902  5384  5430 W YSPTV   : line_bad_net err=SSLHandshakeException url=https://zby.130519.xyz/PLTV/11/224/3221226153/index.m3u8
+10-11 13:38:44.932  5384  5430 D YSPTV   : line_ok lat=30ms url=http://124.223.198.234:1905/624878440
+10-11 13:38:44.965  5384  5430 W YSPTV   : line_bad_http code=404 url=http://101.35.240.114:88/live.php?id=CCTV14
+10-11 13:38:44.998  5384  5430 D YSPTV   : line_ok lat=33ms url=http://124.223.198.234:1905/673168223
+10-11 13:38:45.270  5384  5432 W YSPTV   : line_bad_net err=SSLHandshakeException url=https://zby.130519.xyz/PLTV/11/224/3221225775/index.m3u8
+10-11 13:38:45.300  5384  5432 D YSPTV   : line_ok lat=30ms url=http://124.223.198.234:1905/relay/ysp-cctv164k.m3u8
+10-11 13:38:45.332  5384  5432 D YSPTV   : line_ok lat=32ms url=http://124.223.198.234:1905/relay/ysp-cctv16.m3u8
+10-11 13:38:45.363  5384  5432 D YSPTV   : line_ok lat=31ms url=http://124.223.198.234:1905/673168256
+10-11 13:38:47.356   142   377 D AudioFlinger: mixer(0xf40034c0) throttle end: throttle time(1)
+10-11 13:38:48.848  5384  5431 W YSPTV   : line_bad_net err=SocketTimeoutException url=http://148.135.93.213/live.php?id=CCTV11
+10-11 13:38:48.877  5384  5431 D YSPTV   : line_ok lat=29ms url=http://124.223.198.234:1905/631780532
+10-11 13:38:49.796  5384  5429 W YSPTV   : line_bad_net err=SocketTimeoutException url=http://148.135.93.213/live.php?id=CCTV13
+10-11 13:38:49.826  5384  5429 D YSPTV   : line_ok lat=30ms url=http://124.223.198.234:1905/624878271
+10-11 13:38:49.855  5384  5429 W YSPTV   : line_bad_http code=404 url=http://101.35.240.114:88/live.php?id=CCTV3
+10-11 13:38:49.885  5384  5429 D YSPTV   : line_ok lat=30ms url=http://124.223.198.234:1905/624878396
+10-11 13:38:49.915  5384  5429 W YSPTV   : line_bad_http code=404 url=http://101.35.240.114:88/live.php?id=CCTV6
+10-11 13:38:49.944  5384  5429 D YSPTV   : line_ok lat=29ms url=http://124.223.198.234:1905/673168121
+10-11 13:38:49.999  5384  5430 W YSPTV   : line_bad_net err=SocketTimeoutException url=http://148.135.93.213/live.php?id=CCTV15
+10-11 13:38:50.028  5384  5430 D YSPTV   : line_ok lat=29ms url=http://124.223.198.234:1905/624878356
+10-11 13:38:50.059  5384  5430 W YSPTV   : line_bad_http code=404 url=http://101.35.240.114:88/live.php?id=CCTV8
+10-11 13:38:50.088  5384  5430 D YSPTV   : line_ok lat=29ms url=http://124.223.198.234:1905/673168140
+10-11 13:38:50.329   121   202 E TrafficController: Failed to tag the socket: Bad file descriptor, fd: -1
+10-11 13:38:50.329   918  1230 I NetworkManagementSocketTagger: tagSocketFd(52, 32769, -1) failed with errno-115
+10-11 13:38:50.368  5384  5432 W YSPTV   : line_bad_net err=SocketTimeoutException url=http://74.48.192.96:82/live.php?id=CCTV17
+10-11 13:38:51.041   142   377 D AudioFlinger: mixer(0xf40034c0) throttle end: throttle time(1)
+10-11 13:38:51.375   918   918 I Launcher: Deferring update until onResume
+10-11 13:38:52.565   121   183 E Netd    : Failed to dump IPv4 sockets struct tcp_info: No such file or directory
+10-11 13:38:52.565   121   183 E TcpSocketMonitor: Failed to poll TCP socket info: No such file or directory
+10-11 13:38:53.282   142   377 D AudioFlinger: mixer(0xf40034c0) throttle end: throttle time(1)
+10-11 13:38:53.397   142   377 D AudioFlinger: mixer(0xf40034c0) throttle end: throttle time(1)
+10-11 13:38:53.880  5384  5431 W YSPTV   : line_bad_net err=SocketTimeoutException url=http://148.135.93.213/live.php?id=CCTV2
+10-11 13:38:54.892  5384  5432 W YSPTV   : line_bad_http code=523 url=http://cdn9.163189.xyz/smt1.1.php?id=inews_twn
+10-11 13:38:54.921  5384  5432 W YSPTV   : line_bad_http code=404 url=http://101.35.240.114:88/live.php?id=翡翠台
+10-11 13:38:54.948  5384  5429 W YSPTV   : line_bad_net err=SocketTimeoutException url=http://148.135.93.213/live.php?id=CCTV7
+10-11 13:38:55.090  5384  5430 W YSPTV   : line_bad_net err=SocketTimeoutException url=http://148.135.93.213/live.php?id=CCTV9
+10-11 13:38:56.048  5384  5430 D YSPTV   : line_ok lat=958ms url=http://r.jdshipin.com/Lqdwf
+10-11 13:38:56.251  5384  5431 W YSPTV   : line_bad_net err=ConnectException url=http://erp.giihgtidg.com:8080/live/wxxw01.m3u8
+10-11 13:38:57.194  5384  5432 W YSPTV   : line_bad_net err=ConnectException url=http://erp.giihgtidg.com:8080/live/jade01.m3u8
+10-11 13:38:57.223  5384  5432 D YSPTV   : line_ok lat=29ms url=http://124.223.198.234:1905/608917627
+10-11 13:38:57.253  5384  5432 D YSPTV   : line_ok lat=30ms url=http://124.223.198.234:1905/relay/gdtv-46.m3u8
+10-11 13:38:57.504  5384  5429 D YSPTV   : line_ok lat=2556ms url=http://r.jdshipin.com/ln4xk
+10-11 13:38:57.914   142   377 D AudioFlinger: mixer(0xf40034c0) throttle end: throttle time(1)
+10-11 13:38:58.956  5384  5429 W YSPTV   : line_bad_http code=404 url=https://live.ottiptv.cc/douyu/5908256
+10-11 13:38:59.839   142   377 D AudioFlinger: mixer(0xf40034c0) throttle end: throttle time(1)
+10-11 13:39:00.377   121   202 E TrafficController: Failed to tag the socket: Bad file descriptor, fd: -1
+10-11 13:39:00.377   918  1230 I NetworkManagementSocketTagger: tagSocketFd(52, 32769, -1) failed with errno-115
+10-11 13:39:01.418  5384  5429 W YSPTV   : line_bad_http code=404 url=https://live.ottiptv.cc/huya/11336726
+10-11 13:39:02.888  5384  5429 W YSPTV   : line_bad_http code=404 url=https://live.ottiptv.cc/douyu/4105989
+10-11 13:39:03.223  5384  5432 W YSPTV   : line_bad_net err=SocketTimeoutException url=https://live.ottiptv.cc/huya/11352944
+10-11 13:39:03.512  5384  5432 W YSPTV   : line_bad_http code=404 url=http://txmov2.a.kwimgs.com/bs3/video-hls/5207287136834522947_hlshd15.m3u8
+10-11 13:39:03.776  5384  5432 W YSPTV   : line_bad_http code=404 url=https://txmov2.a.kwimgs.com/bs3/video-hls/5229242184269609742_hlshd15.m3u8
+10-11 13:39:04.035  5384  5432 W YSPTV   : line_bad_http code=404 url=http://txmov2.a.kwimgs.com/bs3/video-hls/5227271857652377954_hlshd15.m3u8
+10-11 13:39:04.272  5384  5432 W YSPTV   : line_bad_http code=404 url=https://txmov2.a.kwimgs.com/bs3/video-hls/5231493982164619599_hlshd15.m3u8
+10-11 13:39:04.299  5384  5432 D YSPTV   : line_ok lat=27ms url=https://txmov2.a.kwimgs.com/bs3/video-hls/519574666340592803
+10-11 13:39:04.329  5384  5432 D YSPTV   : line_ok lat=30ms url=https://txmov2.a.kwimgs.com/bs3/video-hls/521657581093539465
+10-11 13:39:04.356  5384  5432 D YSPTV   : line_ok lat=27ms url=https://txmov2.a.kwimgs.com/bs3/video-hls/519462076376272626
+10-11 13:39:04.588  5384  5432 W YSPTV   : line_bad_http code=404 url=https://txmov2.a.kwimgs.com/bs3/video-hls/5256826755663896297_hlshd15.m3u8
+10-11 13:39:04.713  5384  5432 D YSPTV   : line_ok lat=125ms url=https://alimov2.a.kwimgs.com/upic/2023/01/13/22/BMjAyMzAxMTM
+10-11 13:39:04.746  5384  5432 D YSPTV   : line_ok lat=33ms url=https://alimov2.a.kwimgs.com/upic/2023/01/13/22/BMjAyMzAxMTM
+10-11 13:39:04.783  5384  5432 D YSPTV   : line_ok lat=37ms url=https://alimov2.a.kwimgs.com/upic/2023/01/13/20/BMjAyMzAxMTM
+10-11 13:39:04.828  5384  5432 D YSPTV   : line_ok lat=45ms url=https://alimov2.a.kwimgs.com/upic/2023/01/13/22/BMjAyMzAxMTM
+10-11 13:39:05.020  5384  5432 W YSPTV   : line_bad_http code=404 url=https://txmov2.a.kwimgs.com/bs3/video-hls/5230649583590411879_hlshd15.m3u8
+10-11 13:39:06.056  5384  5430 W YSPTV   : line_bad_net err=SocketTimeoutException url=http://vip.lqcc.xyz:35455/itv/3000000010000005180.m3u8?cdn=F
+10-11 13:39:06.256  5384  5431 W YSPTV   : line_bad_net err=SocketTimeoutException url=http://vip.lqcc.xyz:35455/itv/3000000010000015686.m3u8?cdn=F
+10-11 13:39:06.288  5384  5431 D YSPTV   : line_ok lat=32ms url=https://alimov2.a.kwimgs.com/upic/2023/01/13/21/BMjAyMzAxMTM
+10-11 13:39:06.296  5384  5432 W YSPTV   : line_bad_http code=404 url=https://txmov2.a.kwimgs.com/bs3/video-hls/5225864507896315430_hlshd15.m3u8
+10-11 13:39:06.319  5384  5431 D YSPTV   : line_ok lat=31ms url=https://alimov2.a.kwimgs.com/upic/2023/01/13/20/BMjAyMzAxMTM
+10-11 13:39:06.351  5384  5431 D YSPTV   : line_ok lat=32ms url=https://alimov2.a.kwimgs.com/upic/2023/01/14/23/BMjAyMzAxMTQ
+10-11 13:39:06.371  5384  5430 W YSPTV   : line_bad_http code=404 url=https://txmov2.a.kwimgs.com/bs3/video-hls/5258234133675308186_hlshd15.m3u8
+10-11 13:39:06.383  5384  5431 D YSPTV   : line_ok lat=32ms url=https://alimov2.a.kwimgs.com/upic/2023/01/13/21/BMjAyMzAxMTM
+10-11 13:39:06.399  5384  5432 D YSPTV   : line_ok lat=103ms url=https://alimov2.a.kwimgs.com/upic/2023/01/13/21/BMjAyMzAxMTM
+10-11 13:39:06.414  5384  5431 D YSPTV   : line_ok lat=31ms url=https://alimov2.a.kwimgs.com/upic/2023/01/13/20/BMjAyMzAxMTM
+10-11 13:39:07.053  5384  5430 D YSPTV   : line_ok lat=682ms url=https://alimov2.a.kwimgs.com/upic/2023/01/13/20/BMjAyMzAxMTM
+10-11 13:39:07.894  5384  5429 W YSPTV   : line_bad_net err=SocketTimeoutException url=http://89.187.177.137:8081/&FLIX/index.m3u8
+10-11 13:39:07.899  5384  5427 I YSPTV   : channel_detect done bad=1496 empty=0 total=1532
+10-11 13:39:10.426   121   202 E TrafficController: Failed to tag the socket: Bad file descriptor, fd: -1
+10-11 13:39:10.426   918  1230 I NetworkManagementSocketTagger: tagSocketFd(52, 32769, -1) failed with errno-115
+10-11 13:39:12.003   142   377 D AudioFlinger: mixer(0xf40034c0) throttle end: throttle time(1)
+10-11 13:39:15.521   142   377 D AudioFlinger: mixer(0xf40034c0) throttle end: throttle time(2)
+10-11 13:39:15.994   142   377 D AudioFlinger: mixer(0xf40034c0) throttle end: throttle time(1)
+10-11 13:39:16.323   142   377 D AudioFlinger: mixer(0xf40034c0) throttle end: throttle time(2)
+10-11 13:39:18.563   142   377 D AudioFlinger: mixer(0xf40034c0) throttle end: throttle time(1)
+10-11 13:39:20.472   121   202 E TrafficController: Failed to tag the socket: Bad file descriptor, fd: -1
+10-11 13:39:20.472   918  1230 I NetworkManagementSocketTagger: tagSocketFd(52, 32769, -1) failed with errno-115
+10-11 13:39:22.566   121   183 E Netd    : Failed to dump IPv4 sockets struct tcp_info: No such file or directory
+10-11 13:39:22.566   121   183 E TcpSocketMonitor: Failed to poll TCP socket info: No such file or directory
+10-11 13:39:25.120   142   377 D AudioFlinger: mixer(0xf40034c0) throttle end: throttle time(1)
+10-11 13:39:28.960   142   377 D AudioFlinger: mixer(0xf40034c0) throttle end: throttle time(1)
+10-11 13:39:30.520   121   202 E TrafficController: Failed to tag the socket: Bad file descriptor, fd: -1
+10-11 13:39:30.520   918  1230 I NetworkManagementSocketTagger: tagSocketFd(52, 32769, -1) failed with errno-115
+10-11 13:39:32.129  5384  5646 D RUYI    : callApi url=http://ry.400239.com/api.php?app=10000&act=motion&data=a75e571043e3b7220352a10444d951a32685604f0fce5a3ee382c9c6bbe88978e00a8c76d6af5fabfe87b461b1fa56f69a68b3&sign=5d31367c840614331b9684acbc0fe312
+10-11 13:39:32.196  5384  5646 D RUYI    : callApi raw={"code":200,"msg":"a8134a1c5dfceb305f5cfc5f45d409ac28c37c5c6dda1679b8d7d085cce1d37cbd1d802b83fa5be5f3cb","time":1791697173}
+10-11 13:39:32.197  5384  5646 D RUYI    : heartbeat resp code=200 msg_len=84
+10-11 13:39:32.197  5384  5646 D RUYI    : heartbeat decoded={"vip":"999999999","Try":0,"Clientmode":0}
+10-11 13:39:32.197  5384  5646 D RUYI    : heartbeat parsed vip=999999999 try=0
+10-11 13:39:32.197  5384  5384 I YSPTV   : ruyi_heartbeat_ok vip=999999999
+10-11 13:39:35.833   142   377 D AudioFlinger: mixer(0xf40034c0) throttle end: throttle time(2)
+10-11 13:39:37.920   142   377 D AudioFlinger: mixer(0xf40034c0) throttle end: throttle time(1)
+10-11 13:39:39.353   142   377 D AudioFlinger: mixer(0xf40034c0) throttle end: throttle time(1)
+10-11 13:39:40.570   121   202 E TrafficController: Failed to tag the socket: Bad file descriptor, fd: -1
+10-11 13:39:40.570   918  1230 I NetworkManagementSocketTagger: tagSocketFd(52, 32769, -1) failed with errno-115
+10-11 13:39:43.521   142   377 D AudioFlinger: mixer(0xf40034c0) throttle end: throttle time(1)
+10-11 13:39:46.492   407   420 I UsageStatsService: User[0] Flushing usage stats to disk
+10-11 13:39:50.618   121   202 E TrafficController: Failed to tag the socket: Bad file descriptor, fd: -1
+10-11 13:39:50.618   918  1230 I NetworkManagementSocketTagger: tagSocketFd(52, 32769, -1) failed with errno-115
+10-11 13:39:51.280   130   324 V EmulatedCamera_Camera: getCameraInfo
+10-11 13:39:51.280   130   324 V EmulatedCamera_BaseCamera: getCameraInfo
+10-11 13:39:51.283   407   421 W BroadcastQueue: Background execution not allowed: receiving Intent { act=floating_ball_intent_action flg=0x10 (has extras) } to com.microvirt.launcher2/com.microvirt.launcher.floating.QuickSettingFloatingReceiver
+10-11 13:39:51.300   918  1329 E EGL_adreno: [getAttribValue] Bad attribute idx
+10-11 13:39:51.300   918  1329 D EGL_adreno: eglGetConfigAttrib: bad attrib 0x3339
+10-11 13:39:51.300   144   370 D gralloc_gmin: gralloc_alloc: Creating ashmem region of size 12288
+10-11 13:39:51.302   144   370 I chatty  : uid=1000(system) Binder:144_4 identical 1 line
+10-11 13:39:51.304   144   370 D gralloc_gmin: gralloc_alloc: Creating ashmem region of size 12288
+10-11 13:39:51.479   540   540 W StaticLayout: maxLineHeight should not be -1.  maxLines:1 lineCount:1
+10-11 13:39:51.479   540   540 W StaticLayout: maxLineHeight should not be -1.  maxLines:1 lineCount:1
+10-11 13:39:51.831   144   365 W SurfaceFlinger: Attempting to destroy on removed layer: a58126 Sys2038:com.microvirt.launcher2/com.microvirt.launcher.Launcher#0
+10-11 13:39:52.566   121   183 E Netd    : Failed to dump IPv4 sockets struct tcp_info: No such file or directory
+10-11 13:39:52.566   121   183 E TcpSocketMonitor: Failed to poll TCP socket info: No such file or directory
+10-11 13:39:56.634   142   377 D AudioFlinger: mixer(0xf40034c0) throttle end: throttle time(1)
+10-11 13:40:00.477   142   377 D AudioFlinger: mixer(0xf40034c0) throttle end: throttle time(1)
+10-11 13:40:00.673   121   202 E TrafficController: Failed to tag the socket: Bad file descriptor, fd: -1
+10-11 13:40:00.800   142   377 D AudioFlinger: mixer(0xf40034c0) throttle end: throttle time(2)
