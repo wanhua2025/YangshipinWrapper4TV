@@ -150,8 +150,6 @@ public class MainActivity extends Activity {
     private static boolean sVideoDecodeFailed = false;
     private static boolean sIjkCrashed = false;
     private static final long MENU_AUTO_HIDE_MS = 15000;
-    private static final long MENU_KEY_THROTTLE_MS = 30;
-    private long mLastMenuKeyTime = 0;
     private static final long BLACK_SCREEN_CHECK_DELAY = 4000;
     private boolean mVideoRendered = false;
     private boolean mAudioRendered = false;
@@ -276,6 +274,12 @@ public class MainActivity extends Activity {
     private int currentIndex = 0;
     private int mAutoSwitchFailCount = 0;
     private static final int MAX_AUTO_SWITCH_FAIL = 3;
+    private int mPlaybackRecoverCount = 0;
+    private static final int MAX_PLAYBACK_RECOVER = 3;
+    private int mPlaylistStuckRetryCount = 0;
+    private static final int MAX_PLAYLIST_STUCK_RETRY = 10;
+    private int mSingleLineRetryCount = 0;
+    private static final int MAX_SINGLE_LINE_RETRY = 2;
     private int menuPage = MENU_PAGE_CHANNELS;
     private boolean autoStartOnBoot = false;
     private int bridgeAttempts = 0;
@@ -982,15 +986,15 @@ public class MainActivity extends Activity {
                 + " android9Plus=" + isAndroid9Plus);
         int minBuf, maxBuf, bufPlayback, bufRebuf;
         if (isLowMemDevice) {
-            minBuf = 2000;
-            maxBuf = 6000;
-            bufPlayback = 800;
-            bufRebuf = 1500;
+            minBuf = 5000;
+            maxBuf = 15000;
+            bufPlayback = 2000;
+            bufRebuf = 4000;
         } else {
-            minBuf = 3000;
-            maxBuf = 10000;
-            bufPlayback = 1000;
-            bufRebuf = 2000;
+            minBuf = 8000;
+            maxBuf = 25000;
+            bufPlayback = 3000;
+            bufRebuf = 5000;
         }
         DefaultLoadControl loadControl = new DefaultLoadControl.Builder()
                 .setBufferDurationsMs(minBuf, maxBuf, bufPlayback, bufRebuf)
@@ -1085,14 +1089,17 @@ public class MainActivity extends Activity {
 
             @Override
             public void onPlayerError(PlaybackException error) {
-                Log.e(TAG, "exo_player_error", error);
+                Log.e(TAG, "exo_player_error videoRendered=" + mVideoRendered + " audioRendered=" + mAudioRendered, error);
                 handler.removeCallbacks(blackscreenCheckRunnable);
                 mBlackscreenDetectInProgress = false;
                 boolean isVideoDecodeError = false;
                 boolean isBehindLiveWindow = false;
+                boolean isPlaylistStuck = false;
                 Throwable cause = error;
+                int depth = 0;
                 while (cause != null) {
                     String cn = cause.getClass().getName();
+                    Log.e(TAG, "exo_error_cause[" + depth + "]=" + cn);
                     if (cn.contains("MediaCodecVideoDecoderException") || cn.contains("MediaCodecDecoderException")) {
                         isVideoDecodeError = true;
                         break;
@@ -1100,7 +1107,42 @@ public class MainActivity extends Activity {
                     if (cn.contains("BehindLiveWindowException")) {
                         isBehindLiveWindow = true;
                     }
+                    if (cn.contains("PlaylistStuckException")) {
+                        isPlaylistStuck = true;
+                    }
                     cause = cause.getCause();
+                    depth++;
+                }
+                Log.e(TAG, "exo_error_flags videoDecode=" + isVideoDecodeError + " behindLive=" + isBehindLiveWindow + " playlistStuck=" + isPlaylistStuck);
+                if (isPlaylistStuck) {
+                    mPlaylistStuckRetryCount++;
+                    mPlaybackRecoverCount = 0;
+                    if (mPlaylistStuckRetryCount <= MAX_PLAYLIST_STUCK_RETRY) {
+                        Log.w(TAG, "hls_playlist_stuck_retry=" + mPlaylistStuckRetryCount + "/" + MAX_PLAYLIST_STUCK_RETRY);
+                        handler.postDelayed(new Runnable() {
+                            @Override public void run() { playCurrentWithExo(); }
+                        }, 1500);
+                    } else {
+                        Log.w(TAG, "playlist_stuck_exhausted switch_line_or_maintenance");
+                        mPlaylistStuckRetryCount = 0;
+                        boolean switched = switchToNextLine(true);
+                        if (!switched) {
+                            Channel ch = channels.get(currentIndex);
+                            if (ch.lines.size() <= 1) {
+                                mSingleLineRetryCount++;
+                                if (mSingleLineRetryCount <= MAX_SINGLE_LINE_RETRY) {
+                                    handler.postDelayed(new Runnable() {
+                                        @Override public void run() { playCurrentWithExo(); }
+                                    }, 2000);
+                                } else {
+                                    showCenterMessage("本线路临时维护中......", 0);
+                                }
+                            } else {
+                                showCenterMessage("本线路临时维护中......", 0);
+                            }
+                        }
+                    }
+                    return;
                 }
                 if (isVideoDecodeError) {
                     Log.w(TAG, "exo_video_decode_error_switch_to_ijk");
@@ -1122,11 +1164,56 @@ public class MainActivity extends Activity {
                     playCurrentWithExo();
                     return;
                 }
-                boolean switched = switchToNextLine(true);
-                if (switched) {
-                    Log.i(TAG, "auto_switch_line on_player_error");
+                if (mVideoRendered || mAudioRendered) {
+                    mPlaylistStuckRetryCount = 0;
+                    mPlaybackRecoverCount++;
+                    if (mPlaybackRecoverCount <= MAX_PLAYBACK_RECOVER) {
+                        Log.w(TAG, "playback_interrupted_recover_retry=" + mPlaybackRecoverCount + "/" + MAX_PLAYBACK_RECOVER);
+                        handler.postDelayed(new Runnable() {
+                            @Override public void run() { playCurrentWithExo(); }
+                        }, 800);
+                    } else {
+                        Log.w(TAG, "playback_recover_exhausted try_switch_line");
+                        mPlaybackRecoverCount = 0;
+                        boolean switched = switchToNextLine(true);
+                        if (!switched) {
+                            Channel ch = channels.get(currentIndex);
+                            if (ch.lines.size() <= 1) {
+                                mSingleLineRetryCount++;
+                                if (mSingleLineRetryCount <= MAX_SINGLE_LINE_RETRY) {
+                                    handler.postDelayed(new Runnable() {
+                                        @Override public void run() { playCurrentWithExo(); }
+                                    }, 2000);
+                                } else {
+                                    showCenterMessage("本线路临时维护中......", 0);
+                                }
+                            } else {
+                                showCenterMessage("本线路临时维护中......", 0);
+                            }
+                        }
+                    }
                 } else {
-                    showCenterMessage("本线路临时维护中......", 0);
+                    mPlaylistStuckRetryCount = 0;
+                    mPlaybackRecoverCount = 0;
+                    boolean switched = switchToNextLine(true);
+                    if (switched) {
+                        Log.i(TAG, "auto_switch_line on_player_error");
+                    } else {
+                        Channel ch = channels.get(currentIndex);
+                        if (ch.lines.size() <= 1) {
+                            mSingleLineRetryCount++;
+                            if (mSingleLineRetryCount <= MAX_SINGLE_LINE_RETRY) {
+                                Log.w(TAG, "single_line_retry=" + mSingleLineRetryCount + "/" + MAX_SINGLE_LINE_RETRY);
+                                handler.postDelayed(new Runnable() {
+                                    @Override public void run() { playCurrentWithExo(); }
+                                }, 1000);
+                            } else {
+                                showCenterMessage("本线路临时维护中......", 0);
+                            }
+                        } else {
+                            showCenterMessage("本线路临时维护中......", 0);
+                        }
+                    }
                 }
             }
         });
@@ -1232,17 +1319,46 @@ public class MainActivity extends Activity {
 
                 @Override
                 public void onError(String msg) {
-                    Log.e(TAG, "ijk_on_error msg=" + msg);
+                    Log.e(TAG, "ijk_on_error msg=" + msg + " videoRendered=" + mVideoRendered);
                     handler.post(new Runnable() {
                         @Override
                         public void run() {
-                            boolean switched = switchToNextLine(true);
-                            if (switched) {
-                                Log.i(TAG, "ijk_error_switch_line");
-                                return;
+                            if (mVideoRendered || mAudioRendered) {
+                                mPlaybackRecoverCount++;
+                                if (mPlaybackRecoverCount <= MAX_PLAYBACK_RECOVER) {
+                                    Log.w(TAG, "ijk_playback_interrupted_recover retry=" + mPlaybackRecoverCount);
+                                    handler.postDelayed(new Runnable() {
+                                        @Override public void run() { playCurrentWithIjk(); }
+                                    }, 800);
+                                } else {
+                                    mPlaybackRecoverCount = 0;
+                                    boolean switched = switchToNextLine(true);
+                                    if (!switched) {
+                                        showCenterMessage("本线路临时维护中......", 0);
+                                    }
+                                }
+                            } else {
+                                mPlaybackRecoverCount = 0;
+                                boolean switched = switchToNextLine(true);
+                                if (switched) {
+                                    Log.i(TAG, "ijk_error_switch_line");
+                                    return;
+                                }
+                                Channel ch = channels.get(currentIndex);
+                                if (ch.lines.size() <= 1) {
+                                    mSingleLineRetryCount++;
+                                    if (mSingleLineRetryCount <= MAX_SINGLE_LINE_RETRY) {
+                                        Log.w(TAG, "ijk_single_line_retry=" + mSingleLineRetryCount);
+                                        handler.postDelayed(new Runnable() {
+                                            @Override public void run() { playCurrentWithIjk(); }
+                                        }, 1000);
+                                    } else {
+                                        showCenterMessage("本线路临时维护中......", 0);
+                                    }
+                                } else {
+                                    showCenterMessage("本线路临时维护中......", 0);
+                                }
                             }
-                            Log.w(TAG, "ijk_error_no_more_lines fuse_triggered show_maintenance");
-                            showCenterMessage("本线路临时维护中......", 0);
                         }
                     });
                 }
@@ -2151,33 +2267,14 @@ public class MainActivity extends Activity {
     private void safeNotifyChannelAdapter() {
         if (channelItemAdapter == null) return;
         if (Build.VERSION.SDK_INT >= 20 && channelRecyclerView == null) return;
-        List<Channel> currentList = getCurrentGroupChannels();
-        List<Channel> adapterList = channelItemAdapter.getItems();
-        boolean dataChanged = adapterList.size() != currentList.size();
-        if (!dataChanged) {
-            for (int i = 0; i < currentList.size() && i < adapterList.size(); i++) {
-                if (currentList.get(i) != adapterList.get(i)) { dataChanged = true; break; }
-            }
-        }
         if (Build.VERSION.SDK_INT < 20) {
-            channelItemAdapter.setItems(currentList);
+            Log.d(TAG, "safeNotify API19 mode: manualRender");
+            // API 19: 绕过 RecyclerView 适配器，直接手动构建视图
+            channelItemAdapter.setItems(getCurrentGroupChannels());
             manualRenderChannelList();
         } else {
-            if (dataChanged) {
-                channelItemAdapter.updateData(currentList);
-                channelItemAdapter.notifyDataChanged();
-            } else {
-                channelItemAdapter.notifySelectionChanged(-1, -1);
-            }
-        }
-    }
-
-    private void safeNotifyGroupAdapter() {
-        if (groupAdapter == null) return;
-        if (Build.VERSION.SDK_INT >= 20) {
-            groupAdapter.notifyDataSetChanged();
-        } else {
-            groupAdapter.notifyDataSetChanged();
+            channelItemAdapter.updateData(getCurrentGroupChannels());
+            channelItemAdapter.notifyDataSetChanged();
         }
     }
 
@@ -2538,6 +2635,9 @@ public class MainActivity extends Activity {
         currentIndex = channels.indexOf(found);
         if (currentIndex < 0) currentIndex = 0;
         mAutoSwitchFailCount = 0;
+        mPlaybackRecoverCount = 0;
+        mPlaylistStuckRetryCount = 0;
+        mSingleLineRetryCount = 0;
         Log.i(TAG, "channel_change index=" + currentIndex + " name=" + channels.get(currentIndex).name);
         Channel ch = channels.get(currentIndex);
         String g = (ch.group != null && ch.group.length() > 0) ? ch.group : "默认";
@@ -2595,6 +2695,7 @@ public class MainActivity extends Activity {
             }
         } else {
             mAutoSwitchFailCount = 0;
+            mSingleLineRetryCount = 0;
         }
 
         int startIdx = ch.currentLineIndex;
@@ -3047,14 +3148,8 @@ public class MainActivity extends Activity {
     }
 
     private void refreshMenuAdapters() {
-        if (groupAdapter != null) {
-            if (Build.VERSION.SDK_INT >= 20 && selectedGroupIndex >= 0) {
-                groupAdapter.notifyItemChanged(selectedGroupIndex);
-            } else {
-                groupAdapter.notifyDataSetChanged();
-            }
-        }
-        channelItemAdapter.notifySelectionChanged(selectedChannelInGroup, selectedChannelInGroup);
+        if (groupAdapter != null) groupAdapter.notifyDataSetChanged();
+        safeNotifyChannelAdapter();
     }
 
     private void appendNumber(int digit) {
@@ -3112,12 +3207,6 @@ public class MainActivity extends Activity {
         }
 
         if (menuVisible) {
-            long now = SystemClock.uptimeMillis();
-            if (now - mLastMenuKeyTime < MENU_KEY_THROTTLE_MS) {
-                return true;
-            }
-            mLastMenuKeyTime = now;
-
             if (keyCode == KeyEvent.KEYCODE_DPAD_UP) {
                 if (focusOnGroupSide) moveGroupSelection(-1);
                 else moveChannelSelection(-1);
@@ -3184,38 +3273,22 @@ public class MainActivity extends Activity {
         selectedGroupIndex = (selectedGroupIndex + delta + adapterTotal) % adapterTotal;
 
         boolean isGroup = selectedGroupIndex < menuGroups.size();
-        boolean oldIsGroup = oldIdx < menuGroups.size();
-        boolean groupChanged = false;
-
-        if (isGroup && (!oldIsGroup || !menuGroups.get(selectedGroupIndex).equals(
-                (oldIsGroup) ? menuGroups.get(oldIdx) : null))) {
-            groupChanged = true;
+        if (isGroup && (oldIdx >= menuGroups.size() || !menuGroups.get(selectedGroupIndex).equals(
+                (oldIdx >= 0 && oldIdx < menuGroups.size()) ? menuGroups.get(oldIdx) : null))) {
             selectedChannelInGroup = 0;
+            syncRightPanel();
+            updateMenuHeader();
+        } else if (!isGroup) {
+            safeNotifyChannelAdapter();
         }
-
         if (Build.VERSION.SDK_INT >= 20) {
             groupAdapter.notifyItemChanged(oldIdx);
             groupAdapter.notifyItemChanged(selectedGroupIndex);
         } else {
             groupAdapter.notifyDataSetChanged();
         }
-
-        if (groupChanged) {
-            syncRightPanelFast();
-            updateMenuHeader();
-        } else if (!isGroup) {
-            channelItemAdapter.notifySelectionChanged(-1, -1);
-        }
-
         scrollGroupToPosition(selectedGroupIndex);
         resetMenuAutoHide();
-    }
-
-    private void syncRightPanelFast() {
-        List<Channel> currentList = getCurrentGroupChannels();
-        channelItemAdapter.updateData(currentList);
-        channelItemAdapter.notifyDataChanged();
-        scrollChannelToPosition(selectedChannelInGroup);
     }
 
     private void moveChannelSelection(int delta) {
@@ -4080,19 +4153,7 @@ public class MainActivity extends Activity {
 
         void updateData(List<Channel> newList) {
             items = new ArrayList<>(newList != null ? newList : new ArrayList<Channel>());
-        }
-
-        void notifyDataChanged() {
             notifyDataSetChanged();
-        }
-
-        void notifySelectionChanged(int oldPos, int newPos) {
-            if (Build.VERSION.SDK_INT >= 20) {
-                if (oldPos >= 0 && oldPos < items.size()) notifyItemChanged(oldPos);
-                if (newPos >= 0 && newPos < items.size()) notifyItemChanged(newPos);
-            } else {
-                notifyDataSetChanged();
-            }
         }
 
         void setItems(List<Channel> newList) {

@@ -39,3 +39,10 @@ jadx/
 .apktool/
 ruyi/ruyi.zip
 ruyi/msyhbd.ttf
+/build_*.txt
+/logcat_stream.txt
+/cat_log.txt
+/out.txt
+/pkglist.txt
+/install_*.txt
+/verify_*.txt

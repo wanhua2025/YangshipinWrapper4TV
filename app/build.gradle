@@ -4,11 +4,11 @@ android {
     defaultConfig {
         applicationId "com.lwtdzh.yangshipinwrapper4tv"
         minSdkVersion 19
-        targetSdkVersion 28
-        versionCode 14
-        versionName "2.11"
+        targetSdkVersion 33
+        versionCode 16
+        versionName "2.13"
         multiDexEnabled true
-        ndk { abiFilters "armeabi-v7a", "arm64-v8a" }
+        ndk { abiFilters "armeabi", "armeabi-v7a", "arm64-v8a", "x86", "x86_64" }
     }
     signingConfigs {
         release {
@@ -22,11 +22,10 @@ android {
         release {
             signingConfig signingConfigs.release
             minifyEnabled true
-            shrinkResources true
+            shrinkResources false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
     }
-    lintOptions { abortOnError false; checkReleaseBuilds false }
     compileOptions { sourceCompatibility JavaVersion.VERSION_1_8; targetCompatibility JavaVersion.VERSION_1_8 }
 }
 dependencies {
