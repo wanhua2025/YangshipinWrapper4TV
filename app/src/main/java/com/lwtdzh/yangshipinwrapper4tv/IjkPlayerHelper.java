@@ -324,9 +324,9 @@ public class IjkPlayerHelper {
             mp.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "flush_packets", 1);
             mp.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "safe", 0);
             mp.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "infbuf", 0);
-            mp.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "max-buffer-size", 8 * 1024 * 1024);
-            mp.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "probesize", 32 * 1000);
-            mp.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "analyzeduration", 200 * 1000);
+            mp.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "max-buffer-size", 4 * 1024 * 1024);
+            mp.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "probesize", 16 * 1000);
+            mp.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "analyzeduration", 100 * 1000);
             mp.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "reconnect", 1);
             mp.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "reconnect_streamed", 1);
             mp.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "timeout", 10 * 1000 * 1000);

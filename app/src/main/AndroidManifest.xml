@@ -28,7 +28,7 @@
         android:name="com.lwtdzh.yangshipinwrapper4tv.YSPApplication"
         android:allowBackup="false"
         android:hardwareAccelerated="true"
-        android:largeHeap="true"
+        android:largeHeap="false"
         android:appComponentFactory="androidx.core.app.CoreComponentFactory"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher_round"

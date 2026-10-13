@@ -129,11 +129,20 @@ public class MainActivity extends Activity {
     }
     private static final String TAG = "YSPTV";
     private static final String YSP_HOME_URL = "https://www.yangshipin.cn/tv/home";
-    private static final String M3U_URL = "http://ry.400239.com/ruyi/interface.m3u";
+    private static final String LIVE_TXT_URL = "http://ry.400239.com/live.txt";
+    private static final String M3U_FALLBACK_URL = "http://ry.400239.com/ruyi/interface.m3u";
     private static final String PREFS = "yangshipin_tv";
     private static final String PREF_CHANNEL_PID = "channel_pid";
     private static final String PREF_PLAYBACK_MODE = "playback_mode";
     private static final String PREF_AUTO_START = "auto_start_on_boot";
+    private static final String PREF_LAST_REFRESH_DATE = "last_refresh_date";
+    private static final String PREF_CACHED_M3U = "cached_m3u";
+    private static final String PREF_FIRST_LAUNCH_DONE = "first_launch_done";
+    private static final long CHANNEL_REFRESH_INTERVAL_MS = 24L * 60L * 60L * 1000L;
+    private static final int SOURCE_DOWNLOAD_TIMEOUT_MS = 15000;
+    private static final int LIVE_TXT_DOWNLOAD_TIMEOUT_MS = 10000;
+    private static final int MAX_SOURCE_PARALLEL = 3;
+    private static final int FIRST_SOURCE_TIMEOUT_MS = 12000;
     private static final String PLAYBACK_MODE_AUTO = "auto";
     private static final String PLAYBACK_MODE_HW = "hw";
     private static final String PLAYBACK_MODE_SW = "sw";
@@ -142,9 +151,10 @@ public class MainActivity extends Activity {
     private static final int MENU_PAGE_GROUP_CHANNELS = 3;
     private static final int MENU_PAGE_CHANNELS = 0;
     private static final int MENU_PAGE_SETTINGS = 1;
-    private static final int SETTINGS_ITEM_COUNT = 2;
+    private static final int SETTINGS_ITEM_COUNT = 3;
     private static final int SETTINGS_IDX_DECODER = 0;
-    private static final int SETTINGS_IDX_AUTOSTART = 1;
+    private static final int SETTINGS_IDX_REFRESH = 1;
+    private static final int SETTINGS_IDX_AUTOSTART = 2;
 
     private final Handler handler = new Handler(Looper.getMainLooper());
     private static boolean sVideoDecodeFailed = false;
@@ -262,6 +272,14 @@ public class MainActivity extends Activity {
     private LinearLayout channelListInnerLayout;
     private GroupAdapter groupAdapter;
     private ChannelItemAdapter channelItemAdapter;
+    private LinearLayout loadingPanel;
+    private ProgressBar loadingProgressBar;
+    private TextView loadingProgressText;
+    private TextView loadingPlayBtn;
+    private volatile boolean isIncrementalLoading = false;
+    private volatile int loadedSourceCount = 0;
+    private volatile int totalSourceCount = 0;
+    private final List<String> downloadedM3uBuffer = new ArrayList<String>();
     private final List<String> menuGroups = new ArrayList<>();
     private final Map<String, List<Channel>> groupChannelMap = new LinkedHashMap<>();
     private int selectedGroupIndex = 0;
@@ -400,8 +418,7 @@ public class MainActivity extends Activity {
         }
         applyPlaybackModeToPlayerEngine();
         autoStartOnBoot = preferences.getBoolean(PREF_AUTO_START, false);
-        ensureBootReceiverEnabled();
-        scheduleBootAlarm();
+        applyBootAutoStartState();
 
         buildUi();
         // setupProtocolBridge(); // DISABLED: using M3U + ExoPlayer instead
@@ -409,7 +426,10 @@ public class MainActivity extends Activity {
         loadM3uList();
         initRuyi();
         centerModule = new CenterModule(this, ruyiApi, root);
-        showOverlay("加载中...", true);
+        boolean firstRun = !preferences.contains(PREF_CACHED_M3U);
+        if (!firstRun) {
+            showOverlay("加载中...", true);
+        }
         updateStatus();
         applyCutoutMode();
     }
@@ -474,6 +494,42 @@ public class MainActivity extends Activity {
         abandonAudioFocusInternal();
     }
 
+    @Override
+    public void onTrimMemory(int level) {
+        super.onTrimMemory(level);
+        Log.i(TAG, "onTrimMemory level=" + level);
+        if (level >= TRIM_MEMORY_UI_HIDDEN) {
+            if (bridgeWebView != null) {
+                try {
+                    bridgeWebView.loadUrl("about:blank");
+                } catch (Throwable ignored) {}
+            }
+        }
+        if (level >= TRIM_MEMORY_MODERATE && exoPlayer != null) {
+            try {
+                exoPlayer.setPlayWhenReady(false);
+                Log.i(TAG, "onTrimMemory MODERATE paused player");
+            } catch (Throwable ignored) {}
+        }
+    }
+
+    @Override
+    public void onLowMemory() {
+        super.onLowMemory();
+        Log.w(TAG, "onLowMemory triggered!");
+        if (exoPlayer != null) {
+            try {
+                exoPlayer.stop();
+                Log.i(TAG, "onLowMemory stopped exoPlayer");
+            } catch (Throwable ignored) {}
+        }
+        if (bridgeWebView != null) {
+            try {
+                bridgeWebView.loadUrl("about:blank");
+            } catch (Throwable ignored) {}
+        }
+    }
+
     private void requestAudioFocusInternal() {
         try {
             if (android.content.Context.AUDIO_SERVICE != null) {
@@ -521,6 +577,7 @@ public class MainActivity extends Activity {
         root.addView(overlayText, overlayParams);
 
         buildUpdatePanel();
+        buildLoadingPanel();
 
         statusText = new TextView(this);
         statusText.setVisibility(View.GONE);
@@ -613,6 +670,168 @@ public class MainActivity extends Activity {
         panelLp.rightMargin = dp(16);
         panelLp.bottomMargin = dp(24);
         root.addView(updatePanel, panelLp);
+    }
+
+    private void buildLoadingPanel() {
+        loadingPanel = new LinearLayout(this);
+        loadingPanel.setOrientation(LinearLayout.VERTICAL);
+        GradientDrawable panelBg = new GradientDrawable();
+        panelBg.setShape(GradientDrawable.RECTANGLE);
+        panelBg.setColor(0xF2000000);
+        panelBg.setCornerRadius(dp(14));
+        loadingPanel.setBackground(panelBg);
+        loadingPanel.setPadding(dp(28), dp(24), dp(28), dp(24));
+        loadingPanel.setVisibility(View.GONE);
+
+        LinearLayout.LayoutParams wrapW = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        LinearLayout.LayoutParams matchW = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+
+        TextView title = new TextView(this);
+        title.setText("📡 订阅节目加载中");
+        title.setTextColor(0xFFFFFFFF);
+        title.setTextSize(18);
+        title.setGravity(Gravity.CENTER);
+        loadingPanel.addView(title, matchW);
+
+        TextView subtitle = new TextView(this);
+        subtitle.setId(View.generateViewId());
+        subtitle.setTextColor(0xFFAAAAAA);
+        subtitle.setTextSize(13);
+        subtitle.setGravity(Gravity.CENTER);
+        subtitle.setPadding(0, dp(6), 0, dp(14));
+        subtitle.setText("正在从远程源获取最新频道...");
+        loadingPanel.addView(subtitle, matchW);
+
+        loadingProgressBar = null;
+        try {
+            loadingProgressBar = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal);
+            loadingProgressBar.setMax(100);
+            loadingProgressBar.setProgress(0);
+            loadingProgressBar.setIndeterminate(false);
+            GradientDrawable barBg = new GradientDrawable();
+            barBg.setShape(GradientDrawable.RECTANGLE);
+            barBg.setColor(0xFF333333);
+            barBg.setCornerRadius(dp(3));
+            loadingProgressBar.setBackgroundDrawable(barBg);
+            GradientDrawable pgFill = new GradientDrawable();
+            pgFill.setShape(GradientDrawable.RECTANGLE);
+            pgFill.setColor(0xFF1D6FFF);
+            pgFill.setCornerRadius(dp(3));
+            loadingProgressBar.setProgressDrawable(pgFill);
+        } catch (Throwable ignore) {
+            loadingProgressBar = null;
+        }
+        if (loadingProgressBar != null) {
+            LinearLayout.LayoutParams barLp = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, dp(6));
+            barLp.topMargin = dp(2);
+            loadingPanel.addView(loadingProgressBar, barLp);
+        }
+
+        loadingProgressText = new TextView(this);
+        loadingProgressText.setText("0 / 0 源  ·  首源就绪 0%");
+        loadingProgressText.setTextColor(0xFFBBBBBB);
+        loadingProgressText.setTextSize(13);
+        loadingProgressText.setGravity(Gravity.CENTER);
+        loadingProgressText.setPadding(0, dp(10), 0, dp(6));
+        loadingPanel.addView(loadingProgressText, matchW);
+
+        loadingPlayBtn = new TextView(this);
+        loadingPlayBtn.setText("▶  立即播放首个频道");
+        loadingPlayBtn.setTextColor(0xFFFFFFFF);
+        loadingPlayBtn.setTextSize(15);
+        loadingPlayBtn.setGravity(Gravity.CENTER);
+        loadingPlayBtn.setPadding(dp(24), dp(10), dp(24), dp(10));
+        GradientDrawable btnBg = new GradientDrawable();
+        btnBg.setShape(GradientDrawable.RECTANGLE);
+        btnBg.setColor(0xFF1D6FFF);
+        btnBg.setCornerRadius(dp(8));
+        loadingPlayBtn.setBackground(btnBg);
+        loadingPlayBtn.setVisibility(View.GONE);
+        loadingPlayBtn.setClickable(true);
+        loadingPlayBtn.setFocusable(true);
+        loadingPlayBtn.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                if (channelsLoaded && !channels.isEmpty()) {
+                    Channel firstPlayable = findFirstPlayableChannel();
+                    if (firstPlayable != null) {
+                        playChannel(firstPlayable);
+                    } else {
+                        showOverlay("首个频道正在准备中，请稍候...", true);
+                    }
+                } else {
+                    showOverlay("频道列表尚未就绪", true);
+                }
+            }
+        });
+        LinearLayout.LayoutParams btnLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        btnLp.gravity = Gravity.CENTER;
+        btnLp.topMargin = dp(10);
+        loadingPanel.addView(loadingPlayBtn, btnLp);
+
+        FrameLayout.LayoutParams panelLp = new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT,
+                Gravity.CENTER);
+        panelLp.width = dp(340);
+        root.addView(loadingPanel, panelLp);
+    }
+
+    private void showLoadingPanel(String firstChannel) {
+        if (loadingProgressBar != null) loadingProgressBar.setIndeterminate(true);
+        if (loadingProgressText != null) loadingProgressText.setText("连接远程订阅源...");
+        if (loadingPlayBtn != null) loadingPlayBtn.setVisibility(View.GONE);
+        if (loadingPanel != null) loadingPanel.setVisibility(View.VISIBLE);
+    }
+
+    private void hideLoadingPanel() {
+        if (loadingPanel != null) loadingPanel.setVisibility(View.GONE);
+        isIncrementalLoading = false;
+    }
+
+    private void updateLoadingProgress(int loaded, int total, boolean firstReady) {
+        if (loadingProgressBar == null || loadingProgressText == null) return;
+        totalSourceCount = total;
+        loadedSourceCount = loaded;
+        int pct = total > 0 ? (int) (loaded * 100f / total) : 0;
+        loadingProgressBar.setIndeterminate(false);
+        loadingProgressBar.setProgress(pct);
+        String firstLabel = firstReady ? "✓ 首源就绪" : "首源加载中";
+        loadingProgressText.setText(loaded + " / " + total + " 源  ·  " + firstLabel + "  " + pct + "%");
+        if (firstReady && loadingPlayBtn != null && channelsLoaded && !channels.isEmpty()) {
+            loadingPlayBtn.setVisibility(View.VISIBLE);
+        }
+        if (loaded >= total && total > 0) {
+            handler.postDelayed(new Runnable() {
+                @Override
+                public void run() {
+                    hideLoadingPanel();
+                }
+            }, 1500);
+        }
+    }
+
+    private Channel findFirstPlayableChannel() {
+        if (channels == null || channels.isEmpty()) return null;
+        for (Channel c : channels) {
+            if (c.lines != null && !c.lines.isEmpty()) return c;
+        }
+        return channels.get(0);
+    }
+
+    private void playChannel(Channel ch) {
+        if (ch == null || ch.lines == null || ch.lines.isEmpty()) return;
+        currentIndex = ch.absIndex;
+        if (currentIndex < 0 || currentIndex >= channels.size()) return;
+        Channel playedCh = channels.get(currentIndex);
+        String playedGroup = (playedCh.group != null && playedCh.group.length() > 0) ? playedCh.group : "默认";
+        selectedGroupIndex = menuGroups.indexOf(playedGroup);
+        if (selectedGroupIndex < 0) selectedGroupIndex = 0;
+        selectedChannelInGroup = findChannelIndexInGroup(selectedGroupIndex, playedCh);
+        requestCurrentStream();
     }
 
     private void showUpdatePanel(String msg) {
@@ -844,6 +1063,10 @@ public class MainActivity extends Activity {
             playerView.setFocusable(false);
             playerView.setResizeMode(AspectRatioFrameLayout.RESIZE_MODE_FIT);
             try {
+                java.lang.reflect.Method m = playerView.getClass().getMethod("setSurfaceType", int.class);
+                m.invoke(playerView, 1);
+            } catch (Throwable ignored) {}
+            try {
                 playerView.setLayerType(View.LAYER_TYPE_NONE, null);
             } catch (Throwable ignored) {}
         }
@@ -957,48 +1180,54 @@ public class MainActivity extends Activity {
         try {
             java.lang.reflect.Field f = DefaultRenderersFactory.class.getDeclaredField("allowedVideoJoiningTimeMs");
             f.setAccessible(true);
-            f.setLong(renderersFactory, 1000);
-            Log.i(TAG, "exo_joining_time_set=1000ms");
+            f.setLong(renderersFactory, 500);
+            Log.i(TAG, "exo_joining_time_set=500ms_fast_start");
         } catch (Throwable t) {
             Log.d(TAG, "exo_joining_time_reflect_failed: " + t.getMessage());
         }
-        if (Build.VERSION.SDK_INT >= 28) {
-            try {
-                renderersFactory.experimentalSetSynchronizeCodecInteractionsWithQueueingEnabled(false);
-                Log.i(TAG, "exo_android9_async_codec_queue_enabled sdk=" + Build.VERSION.SDK_INT);
-            } catch (Throwable t) {
-                Log.d(TAG, "exo_async_queue_not_available: " + t.getMessage());
-                renderersFactory.forceDisableMediaCodecAsynchronousQueueing();
-            }
-        } else {
-            renderersFactory.forceDisableMediaCodecAsynchronousQueueing();
-            try {
-                renderersFactory.experimentalSetSynchronizeCodecInteractionsWithQueueingEnabled(true);
-            } catch (Throwable ignored) {}
-            Log.i(TAG, "exo_force_sync_codec_queue_pre_android9 sdk=" + Build.VERSION.SDK_INT);
-        }
+        renderersFactory.forceDisableMediaCodecAsynchronousQueueing();
+        try {
+            renderersFactory.experimentalSetSynchronizeCodecInteractionsWithQueueingEnabled(true);
+            Log.i(TAG, "exo_force_sync_codec_queue_all_sdk_fix_hi3798_bug sdk=" + Build.VERSION.SDK_INT);
+        } catch (Throwable ignored) {}
 
-        long totalMemBytes = java.lang.Runtime.getRuntime().maxMemory();
-        boolean isLowMemDevice = totalMemBytes > 0 && totalMemBytes <= 128 * 1024 * 1024;
+        boolean isSystemLowMem = false;
+        long availMemMB = -1;
+        try {
+            android.app.ActivityManager am = (android.app.ActivityManager) getSystemService(ACTIVITY_SERVICE);
+            if (am != null) {
+                android.app.ActivityManager.MemoryInfo mi = new android.app.ActivityManager.MemoryInfo();
+                am.getMemoryInfo(mi);
+                availMemMB = mi.availMem / (1024 * 1024);
+                isSystemLowMem = mi.lowMemory || (availMemMB > 0 && availMemMB < 200);
+            }
+        } catch (Throwable t) {
+            Log.d(TAG, "memory_info_check_failed: " + t.getMessage());
+        }
+        long javaHeapBytes = java.lang.Runtime.getRuntime().maxMemory();
         boolean isAndroid9Plus = Build.VERSION.SDK_INT >= 28;
-        boolean isLowMemReal = totalMemBytes > 0 && totalMemBytes <= 256 * 1024 * 1024;
-        Log.i(TAG, "exo_mem_total=" + (totalMemBytes / (1024 * 1024)) + "MB lowMem=" + isLowMemDevice
-                + " android9Plus=" + isAndroid9Plus);
+        Log.i(TAG, "exo_mem javaHeap=" + (javaHeapBytes / (1024 * 1024)) + "MB"
+                + " availSystem=" + availMemMB + "MB lowMem=" + isSystemLowMem
+                + " sdk=" + Build.VERSION.SDK_INT);
+
         int minBuf, maxBuf, bufPlayback, bufRebuf;
-        if (isLowMemDevice) {
-            minBuf = 5000;
-            maxBuf = 15000;
-            bufPlayback = 2000;
-            bufRebuf = 4000;
+        long targetBufBytes;
+        if (isSystemLowMem) {
+            minBuf = 6000;
+            maxBuf = 20000;
+            bufPlayback = 2500;
+            bufRebuf = 4500;
+            targetBufBytes = 32L * 1024 * 1024;
         } else {
-            minBuf = 8000;
-            maxBuf = 25000;
+            minBuf = 10000;
+            maxBuf = 30000;
             bufPlayback = 3000;
             bufRebuf = 5000;
+            targetBufBytes = 64L * 1024 * 1024;
         }
         DefaultLoadControl loadControl = new DefaultLoadControl.Builder()
                 .setBufferDurationsMs(minBuf, maxBuf, bufPlayback, bufRebuf)
-                .setTargetBufferBytes(isLowMemReal ? 32 * 1024 * 1024 : 64 * 1024 * 1024)
+                .setTargetBufferBytes((int) targetBufBytes)
                 .setPrioritizeTimeOverSizeThresholds(true)
                 .build();
         com.google.android.exoplayer2.trackselection.DefaultTrackSelector trackSelector =
@@ -1484,8 +1713,9 @@ public class MainActivity extends Activity {
         }
     }
 
-    private static final int M3U_MAX_RETRY = 5;
-    private static final long M3U_RETRY_INTERVAL_MS = 4000L;
+    private static final int LIVE_TXT_MAX_RETRY = 3;
+    private static final long LIVE_TXT_RETRY_INTERVAL_MS = 3000L;
+    private volatile boolean forceRefreshChannels = false;
 
     private boolean isNetworkReady() {
         try {
@@ -1510,75 +1740,375 @@ public class MainActivity extends Activity {
     }
 
     private void loadM3uList() {
-        loadM3uListWithRetry(0);
-    }
-
-    private void loadM3uListWithRetry(final int attempt) {
-        if (attempt > 0) {
-            Log.i(TAG, "m3u_retry attempt=" + attempt);
-            showOverlay("频道列表加载失败，第 " + attempt + " 次重试...", false);
-        }
+        forceRefreshChannels = false;
         new Thread(new Runnable() {
             @Override
             public void run() {
-                try {
-                    if (!isNetworkReady()) {
-                        Log.i(TAG, "m3u_network_not_ready, wait 3s then retry");
-                        Thread.sleep(3000);
-                        handler.post(new Runnable() {
-                            @Override
-                            public void run() {
-                                loadM3uListWithRetry(attempt + 1);
-                            }
-                        });
-                        return;
+                doLoadPlaylist(false);
+            }
+        }, "ChannelLoader").start();
+    }
+
+    private void forceRefreshM3uList() {
+        forceRefreshChannels = true;
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                doLoadPlaylist(true);
+            }
+        }, "ChannelLoaderForce").start();
+    }
+
+    private interface SourceReadyCallback {
+        void onSourceReady(int loaded, int total, String m3uText);
+        void onAllDone(int totalCount, int successCount);
+        void onFailed(String reason);
+    }
+
+    private void doLoadPlaylist(boolean force) {
+        try {
+            String cachedM3u = preferences.getString(PREF_CACHED_M3U, null);
+            long lastRefresh = preferences.getLong(PREF_LAST_REFRESH_DATE, 0);
+            long now = System.currentTimeMillis();
+            long age = now - lastRefresh;
+            boolean cacheFresh = (cachedM3u != null) && (age < CHANNEL_REFRESH_INTERVAL_MS) && !force;
+            boolean firstInstall = cachedM3u == null;
+
+            if (cacheFresh && !force) {
+                Log.i(TAG, "channel_cache_hit age_hours=" + (age / 3600000L));
+                final String finalM3u = cachedM3u;
+                handler.post(new Runnable() {
+                    @Override
+                    public void run() {
+                        parseM3u8(finalM3u);
                     }
-                    HttpURLConnection conn = (HttpURLConnection) new URL(M3U_URL).openConnection();
-                    conn.setConnectTimeout(10000);
-                    conn.setReadTimeout(15000);
-                    conn.setRequestProperty("User-Agent", "Mozilla/5.0");
-                    int code = conn.getResponseCode();
-                    Log.i(TAG, "m3u_http_code=" + code + " attempt=" + attempt);
-                    if (code != 200) {
-                        throw new IOException("HTTP " + code);
+                });
+                return;
+            }
+
+            if (!isNetworkReady()) {
+                Log.i(TAG, "channel_network_not_ready");
+                handler.post(new Runnable() {
+                    @Override
+                    public void run() {
+                        if (cachedM3u != null) {
+                            parseM3u8(cachedM3u);
+                            showOverlay("网络不可用，使用" + (lastRefresh > 0 ? "已缓存" : "内置") + "频道", false);
+                        } else {
+                            showOverlay("网络不可用且无频道缓存", true);
+                        }
                     }
-                    InputStream is = conn.getInputStream();
-                    ByteArrayOutputStream baos = new ByteArrayOutputStream();
-                    byte[] buf = new byte[8192];
-                    int r;
-                    while ((r = is.read(buf)) != -1) {
-                        baos.write(buf, 0, r);
+                });
+                return;
+            }
+
+            final boolean useIncremental = firstInstall;
+
+            String[] sourceUrls = downloadLiveTxtSources();
+            if (sourceUrls == null || sourceUrls.length == 0) {
+                Log.w(TAG, "live_txt_empty fallback_single=" + M3U_FALLBACK_URL);
+                sourceUrls = new String[]{M3U_FALLBACK_URL};
+            }
+            final String[] finalUrls = sourceUrls;
+            final long finalNow = now;
+
+            if (useIncremental) {
+                handler.post(new Runnable() {
+                    @Override
+                    public void run() {
+                        showLoadingPanel(null);
                     }
-                    is.close();
-                    final String content = new String(baos.toByteArray(), Charset.forName("UTF-8"));
+                });
+                startIncrementalDownload(finalUrls, finalNow, cachedM3u);
+            } else {
+                List<String> m3uContents = downloadAllSources(finalUrls);
+                if (m3uContents.isEmpty()) {
+                    m3uContents.add(downloadSingleM3U(M3U_FALLBACK_URL, SOURCE_DOWNLOAD_TIMEOUT_MS));
+                }
+                if (m3uContents.isEmpty() || m3uContents.get(0) == null) {
+                    final String cache = cachedM3u;
                     handler.post(new Runnable() {
                         @Override
                         public void run() {
-                            parseM3u8(content);
+                            if (cache != null) {
+                                parseM3u8(cache);
+                                showOverlay("订阅源全部失败，使用缓存频道", false);
+                            } else {
+                                showOverlay("频道列表加载失败", true);
+                            }
                         }
                     });
-                } catch (final Exception e) {
-                    Log.e(TAG, "m3u_load_failed attempt=" + attempt, e);
-                    if (attempt < M3U_MAX_RETRY) {
-                        long wait = M3U_RETRY_INTERVAL_MS * (attempt + 1);
-                        final int nextAttempt = attempt + 1;
-                        handler.postDelayed(new Runnable() {
-                            @Override
-                            public void run() {
-                                loadM3uListWithRetry(nextAttempt);
-                            }
-                        }, wait);
+                    return;
+                }
+                String merged = mergeM3uTexts(m3uContents);
+                final String finalMerged = merged;
+                handler.post(new Runnable() {
+                    @Override
+                    public void run() {
+                        parseM3u8(finalMerged);
+                    }
+                });
+                preferences.edit()
+                        .putString(PREF_CACHED_M3U, finalMerged)
+                        .putLong(PREF_LAST_REFRESH_DATE, finalNow)
+                        .putBoolean(PREF_FIRST_LAUNCH_DONE, true)
+                        .apply();
+                Log.i(TAG, "channel_refresh_complete bytes=" + finalMerged.length());
+            }
+
+        } catch (final Exception e) {
+            Log.e(TAG, "channel_load_exception", e);
+            final String cache = preferences.getString(PREF_CACHED_M3U, null);
+            handler.post(new Runnable() {
+                @Override
+                public void run() {
+                    if (loadingPanel != null) loadingPanel.setVisibility(View.GONE);
+                    if (cache != null) {
+                        parseM3u8(cache);
+                        showOverlay("频道加载异常，使用缓存", false);
                     } else {
+                        showOverlay("频道列表加载异常: " + e.getMessage(), true);
+                    }
+                }
+            });
+        }
+    }
+
+    private void startIncrementalDownload(final String[] urls, final long now, final String fallbackCache) {
+        isIncrementalLoading = true;
+        downloadedM3uBuffer.clear();
+
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                String firstUrl = urls[0];
+                String firstM3u = downloadSingleM3U(firstUrl, FIRST_SOURCE_TIMEOUT_MS);
+
+                if (firstM3u != null && firstM3u.length() > 50) {
+                    synchronized (downloadedM3uBuffer) { downloadedM3uBuffer.add(firstM3u); }
+
+                    final String stageOneMerged = mergeM3uTexts(downloadedM3uBuffer);
+                    handler.post(new Runnable() {
+                        @Override
+                        public void run() {
+                            parseM3u8(stageOneMerged);
+                            updateLoadingProgress(1, urls.length, true);
+                            hideLoadingPanel();
+                        }
+                    });
+                    Log.i(TAG, "channel_stage1_done first_source_ok=" + (firstM3u.length() / 1024) + "KB");
+                } else {
+                    Log.w(TAG, "channel_stage1_fail first_source_retrieve failed");
+                    synchronized (downloadedM3uBuffer) {
+                        downloadedM3uBuffer.add(downloadSingleM3U(M3U_FALLBACK_URL, SOURCE_DOWNLOAD_TIMEOUT_MS));
+                    }
+                    final String stageOneFallback = mergeM3uTexts(downloadedM3uBuffer);
+                    handler.post(new Runnable() {
+                        @Override
+                        public void run() {
+                            parseM3u8(stageOneFallback);
+                            updateLoadingProgress(1, urls.length, true);
+                        }
+                    });
+                }
+
+                new Thread(new Runnable() {
+                    @Override
+                    public void run() {
+                        for (int i = 1; i < urls.length; i++) {
+                            String txt = downloadSingleM3U(urls[i], SOURCE_DOWNLOAD_TIMEOUT_MS);
+                            boolean sourceOk = (txt != null && txt.length() > 50);
+                            int nowLoaded;
+                            if (sourceOk) {
+                                synchronized (downloadedM3uBuffer) {
+                                    downloadedM3uBuffer.add(txt);
+                                    nowLoaded = downloadedM3uBuffer.size();
+                                }
+                            } else {
+                                synchronized (downloadedM3uBuffer) {
+                                    nowLoaded = downloadedM3uBuffer.size();
+                                }
+                                Log.w(TAG, "channel_stage2_fail source[" + i + "]: " + safeShorten(urls[i]));
+                            }
+
+                            synchronized (downloadedM3uBuffer) {
+                                if (!downloadedM3uBuffer.isEmpty()) {
+                                    String incrementalMerged = mergeM3uTexts(downloadedM3uBuffer);
+                                    final String finalIncMerged = incrementalMerged;
+                                    final int finalLoaded = nowLoaded;
+                                    handler.post(new Runnable() {
+                                        @Override
+                                        public void run() {
+                                            parseM3u8(finalIncMerged);
+                                            updateLoadingProgress(finalLoaded, urls.length, true);
+                                        }
+                                    });
+                                }
+                            }
+                        }
+
+                        String finalCache;
+                        synchronized (downloadedM3uBuffer) {
+                            finalCache = downloadedM3uBuffer.isEmpty() ? null : mergeM3uTexts(downloadedM3uBuffer);
+                        }
+                        final String finalCacheF = finalCache;
                         handler.post(new Runnable() {
                             @Override
                             public void run() {
-                                showOverlay("频道列表加载失败: " + e.getMessage() + "\n点击重试按钮", true);
+                                if (finalCacheF != null) {
+                                    preferences.edit()
+                                            .putString(PREF_CACHED_M3U, finalCacheF)
+                                            .putLong(PREF_LAST_REFRESH_DATE, now)
+                                            .putBoolean(PREF_FIRST_LAUNCH_DONE, true)
+                                            .apply();
+                                    Log.i(TAG, "channel_incremental_done total=" + urls.length
+                                            + " final_bytes=" + finalCacheF.length());
+                                }
+                                isIncrementalLoading = false;
                             }
                         });
                     }
-                }
+                }, "ChannelStage2").start();
             }
-        }).start();
+        }, "ChannelStage1").start();
+    }
+
+    private String[] downloadLiveTxtSources() {
+        String lastError = null;
+        for (int attempt = 0; attempt <= LIVE_TXT_MAX_RETRY; attempt++) {
+            if (attempt > 0) {
+                try { Thread.sleep(LIVE_TXT_RETRY_INTERVAL_MS * attempt); } catch (InterruptedException ignored) {}
+                Log.i(TAG, "live_txt_retry attempt=" + attempt);
+            }
+            HttpURLConnection conn = null;
+            try {
+                conn = (HttpURLConnection) new URL(LIVE_TXT_URL).openConnection();
+                conn.setConnectTimeout(LIVE_TXT_DOWNLOAD_TIMEOUT_MS);
+                conn.setReadTimeout(LIVE_TXT_DOWNLOAD_TIMEOUT_MS);
+                conn.setRequestProperty("User-Agent", "Mozilla/5.0");
+                int code = conn.getResponseCode();
+                if (code != 200) { lastError = "HTTP " + code; continue; }
+                InputStream is = conn.getInputStream();
+                String raw = readAll(is);
+                is.close();
+                String[] lines = raw.split("\\r?\\n");
+                List<String> urls = new ArrayList<String>();
+                for (String l : lines) {
+                    String t = l.trim();
+                    if (t.length() == 0 || t.startsWith("#")) continue;
+                    if (t.startsWith("http://") || t.startsWith("https://")) urls.add(t);
+                }
+                Log.i(TAG, "live_txt_downloaded sources=" + urls.size());
+                return urls.toArray(new String[0]);
+            } catch (Exception e) {
+                lastError = e.getMessage();
+                Log.w(TAG, "live_txt_attempt_fail " + attempt + ": " + lastError);
+            } finally {
+                if (conn != null) try { conn.disconnect(); } catch (Throwable ignored) {}
+            }
+        }
+        Log.e(TAG, "live_txt_all_retry_failed: " + lastError);
+        return null;
+    }
+
+    private String downloadSingleM3U(String url, int timeoutMs) {
+        HttpURLConnection conn = null;
+        try {
+            conn = (HttpURLConnection) new URL(url).openConnection();
+            conn.setConnectTimeout(timeoutMs);
+            conn.setReadTimeout(timeoutMs);
+            conn.setRequestProperty("User-Agent", "Mozilla/5.0");
+            int code = conn.getResponseCode();
+            if (code != 200) { Log.w(TAG, "source_http_error code=" + code + " url=" + safeShorten(url)); return null; }
+            InputStream is = conn.getInputStream();
+            String text = readAll(is);
+            is.close();
+            return text;
+        } catch (Exception e) {
+            Log.w(TAG, "source_download_fail " + safeShorten(url) + ": " + e.getMessage());
+            return null;
+        } finally {
+            if (conn != null) try { conn.disconnect(); } catch (Throwable ignored) {}
+        }
+    }
+
+    private List<String> downloadAllSources(String[] urls) {
+        List<String> ok = new ArrayList<String>();
+        List<String> failUrls = new ArrayList<String>();
+        java.util.concurrent.atomic.AtomicInteger done = new java.util.concurrent.atomic.AtomicInteger(0);
+        java.util.concurrent.CountDownLatch latch = new java.util.concurrent.CountDownLatch(urls.length);
+        java.util.concurrent.Semaphore gate = new java.util.concurrent.Semaphore(MAX_SOURCE_PARALLEL);
+
+        for (final String u : urls) {
+            new Thread(new Runnable() {
+                @Override
+                public void run() {
+                    try {
+                        gate.acquire();
+                        try {
+                            String txt = downloadSingleM3U(u, SOURCE_DOWNLOAD_TIMEOUT_MS);
+                            if (txt != null && txt.length() > 50) {
+                                synchronized (ok) { ok.add(txt); }
+                            } else {
+                                synchronized (failUrls) { failUrls.add(u); }
+                            }
+                        } finally {
+                            gate.release();
+                        }
+                    } catch (Throwable t) {
+                        synchronized (failUrls) { failUrls.add(u); }
+                    } finally {
+                        latch.countDown();
+                    }
+                }
+            }, "SrcLoader-" + (done.incrementAndGet())).start();
+        }
+
+        try { latch.await(urls.length * 20L, java.util.concurrent.TimeUnit.SECONDS); } catch (InterruptedException ignored) {}
+        if (!failUrls.isEmpty()) {
+            Log.w(TAG, "source_fail_list=" + failUrls.size() + ": " + failUrls);
+        }
+        return ok;
+    }
+
+    private String mergeM3uTexts(List<String> sources) {
+        StringBuilder sb = new StringBuilder();
+        boolean first = true;
+        for (String src : sources) {
+            String trimmed = src.trim();
+            if (trimmed.isEmpty()) continue;
+            if (!first) {
+                if (trimmed.startsWith("#EXTM3U")) {
+                    int idx = trimmed.indexOf('\n');
+                    if (idx >= 0) {
+                        sb.append(trimmed, idx + 1, trimmed.length());
+                    } else {
+                        sb.append(trimmed.substring("#EXTM3U".length()));
+                    }
+                } else {
+                    sb.append(trimmed);
+                }
+                if (sb.length() > 0 && sb.charAt(sb.length() - 1) != '\n') sb.append('\n');
+            } else {
+                sb.append(trimmed);
+                if (!trimmed.endsWith("\n")) sb.append('\n');
+                first = false;
+            }
+        }
+        return sb.toString();
+    }
+
+    private String readAll(InputStream is) throws java.io.IOException {
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        byte[] buf = new byte[8192];
+        int r;
+        while ((r = is.read(buf)) != -1) baos.write(buf, 0, r);
+        return new String(baos.toByteArray(), Charset.forName("UTF-8"));
+    }
+
+    private static String safeShorten(String s) {
+        if (s == null) return "";
+        return s.length() > 70 ? s.substring(0, 70) + "..." : s;
     }
 
     private String normalizeChannelName(String raw) {
@@ -1843,6 +2373,37 @@ public class MainActivity extends Activity {
         });
     }
 
+    private static int compareChannelNames(String a, String b) {
+        if (a == null) a = "";
+        if (b == null) b = "";
+        Integer na = extractCctvNumber(a);
+        Integer nb = extractCctvNumber(b);
+        if (na != null && nb != null) {
+            return Integer.compare(na, nb);
+        }
+        if (na != null) return -1;
+        if (nb != null) return 1;
+        return a.compareTo(b);
+    }
+
+    private static Integer extractCctvNumber(String name) {
+        if (name == null) return null;
+        String lower = name.toLowerCase().trim();
+        if (!lower.startsWith("cctv")) return null;
+        int dash = lower.indexOf('-');
+        if (dash < 0) return null;
+        String rest = lower.substring(dash + 1);
+        StringBuilder numBuf = new StringBuilder();
+        for (int i = 0; i < rest.length(); i++) {
+            char c = rest.charAt(i);
+            if (c >= '0' && c <= '9') numBuf.append(c);
+            else break;
+        }
+        if (numBuf.length() == 0) return null;
+        try { return Integer.parseInt(numBuf.toString()); }
+        catch (NumberFormatException e) { return null; }
+    }
+
     private void parseM3u8(String content) {
         List<Channel> parsed = new ArrayList<>();
         String currentGroup = "默认";
@@ -1972,6 +2533,23 @@ public class MainActivity extends Activity {
             groupChannelMap.get(g).add(ch);
         }
         sortMenuGroups(menuGroups);
+        for (String g : menuGroups) {
+            List<Channel> list = groupChannelMap.get(g);
+            if (list != null && list.size() > 1) {
+                java.util.Collections.sort(list, new java.util.Comparator<Channel>() {
+                    @Override
+                    public int compare(Channel a, Channel b) {
+                        return compareChannelNames(a.name, b.name);
+                    }
+                });
+            }
+        }
+        channels.clear();
+        for (String g : menuGroups) {
+            List<Channel> list = groupChannelMap.get(g);
+            if (list != null) channels.addAll(list);
+        }
+        for (int i = 0; i < channels.size(); i++) channels.get(i).absIndex = i;
         Log.i(TAG, "m3u_groups count=" + menuGroups.size() + " order=" + menuGroups);
 
         String savedPid = preferences.getString(PREF_CHANNEL_PID, "");
@@ -2031,10 +2609,10 @@ public class MainActivity extends Activity {
         String userAgent = "Mozilla/5.0 (Linux; Android " + Build.VERSION.SDK_INT + ") AppleWebKit/537.36 Chrome/120.0 Mobile";
         if (sSharedOkClient == null) {
             java.util.concurrent.TimeUnit unit = java.util.concurrent.TimeUnit.MINUTES;
-            okhttp3.ConnectionPool pool = new okhttp3.ConnectionPool(20, 10, unit);
+            okhttp3.ConnectionPool pool = new okhttp3.ConnectionPool(5, 5, unit);
             okhttp3.Dispatcher dispatcher = new okhttp3.Dispatcher();
-            dispatcher.setMaxRequests(20);
-            dispatcher.setMaxRequestsPerHost(10);
+            dispatcher.setMaxRequests(5);
+            dispatcher.setMaxRequestsPerHost(3);
             javax.net.ssl.X509TrustManager trustAll = new javax.net.ssl.X509TrustManager() {
                 @Override public void checkClientTrusted(java.security.cert.X509Certificate[] chain, String authType) {}
                 @Override public void checkServerTrusted(java.security.cert.X509Certificate[] chain, String authType) {}
@@ -2094,9 +2672,17 @@ public class MainActivity extends Activity {
     }
 
     private void detectBadChannels() {
-        long totalMemBytes = java.lang.Runtime.getRuntime().maxMemory();
-        if (totalMemBytes > 0 && totalMemBytes <= 128 * 1024 * 1024) {
-            Log.i(TAG, "channel_detect_skip_low_mem_device mem=" + (totalMemBytes / (1024 * 1024)) + "MB");
+        boolean isSysLowMem = false;
+        try {
+            android.app.ActivityManager am = (android.app.ActivityManager) getSystemService(ACTIVITY_SERVICE);
+            if (am != null) {
+                android.app.ActivityManager.MemoryInfo mi = new android.app.ActivityManager.MemoryInfo();
+                am.getMemoryInfo(mi);
+                isSysLowMem = mi.lowMemory || (mi.availMem > 0 && mi.availMem < 150 * 1024 * 1024);
+            }
+        } catch (Throwable ignored) {}
+        if (isSysLowMem) {
+            Log.i(TAG, "channel_detect_skip_system_low_mem");
             return;
         }
         Log.i(TAG, "channel_detect start async");
@@ -2402,6 +2988,17 @@ public class MainActivity extends Activity {
             groupChannelMap.get(g).add(ch);
         }
         sortMenuGroups(menuGroups);
+        for (String g : menuGroups) {
+            List<Channel> list = groupChannelMap.get(g);
+            if (list != null && list.size() > 1) {
+                java.util.Collections.sort(list, new java.util.Comparator<Channel>() {
+                    @Override
+                    public int compare(Channel a, Channel b) {
+                        return compareChannelNames(a.name, b.name);
+                    }
+                });
+            }
+        }
         int wasCurrentIndex = 0;
         for (int i = 0; i < channels.size(); i++) {
             if (channels.get(i).name.equals(curName)) { wasCurrentIndex = i; break; }
@@ -2914,6 +3511,7 @@ public class MainActivity extends Activity {
 
         final String[] items = new String[]{
                 "解码器模式  " + playbackModeLabel(),
+                "刷新频道源",
                 "开机自启    " + (autoStartOnBoot ? "开" : "关"),
                 "关闭"
         };
@@ -2955,10 +3553,14 @@ public class MainActivity extends Activity {
                     items[0] = "解码器模式  " + playbackModeLabel();
                     adapter.notifyDataSetChanged();
                 } else if (position == 1) {
-                    toggleAutoStart();
-                    items[1] = "开机自启    " + (autoStartOnBoot ? "开" : "关");
-                    adapter.notifyDataSetChanged();
+                    dialog.dismiss();
+                    showOverlay("正在从订阅源刷新频道...", true);
+                    forceRefreshM3uList();
                 } else if (position == 2) {
+                    toggleAutoStart();
+                    items[2] = "开机自启    " + (autoStartOnBoot ? "开" : "关");
+                    adapter.notifyDataSetChanged();
+                } else if (position == 3) {
                     dialog.dismiss();
                 }
             }
@@ -3058,6 +3660,51 @@ public class MainActivity extends Activity {
     private void toggleAutoStart() {
         autoStartOnBoot = !autoStartOnBoot;
         preferences.edit().putBoolean(PREF_AUTO_START, autoStartOnBoot).apply();
+        applyBootAutoStartState();
+    }
+
+    private void applyBootAutoStartState() {
+        if (autoStartOnBoot) {
+            scheduleBootAlarm();
+            ensureBootReceiverEnabled();
+            Log.i(TAG, "boot_auto_start_ENABLED");
+        } else {
+            cancelBootAlarm();
+            disableBootReceiver();
+            Log.i(TAG, "boot_auto_start_DISABLED_alarm_canceled");
+        }
+    }
+
+    private void cancelBootAlarm() {
+        try {
+            Intent intent = new Intent(this, MainActivity.class);
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+            PendingIntent pi = PendingIntent.getActivity(this, 10001, intent,
+                    PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+            AlarmManager am = (AlarmManager) getSystemService(ALARM_SERVICE);
+            if (am != null) {
+                am.cancel(pi);
+                Log.i(TAG, "cancelBootAlarm: alarm canceled");
+            }
+        } catch (Throwable t) {
+            Log.e(TAG, "cancelBootAlarm failed", t);
+        }
+    }
+
+    private void disableBootReceiver() {
+        try {
+            ComponentName cn = new ComponentName(this, BootReceiver.class);
+            PackageManager pm = getPackageManager();
+            int state = pm.getComponentEnabledSetting(cn);
+            if (state != PackageManager.COMPONENT_ENABLED_STATE_DISABLED) {
+                pm.setComponentEnabledSetting(cn,
+                        PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
+                        PackageManager.DONT_KILL_APP);
+                Log.i(TAG, "disableBootReceiver: BootReceiver DISABLED (was=" + state + ")");
+            }
+        } catch (Throwable t) {
+            Log.e(TAG, "disableBootReceiver failed", t);
+        }
     }
 
     private List<Channel> getCurrentGroupChannels() {
@@ -3976,6 +4623,7 @@ public class MainActivity extends Activity {
 
     @Override
     protected void onDestroy() {
+        cancelBootAlarm();
         if (centerModule != null) {
             centerModule.destroy();
             centerModule = null;
@@ -4499,16 +5147,16 @@ public class MainActivity extends Activity {
 
     private void scheduleBootAlarm() {
         try {
+            cancelBootAlarm();
             Intent intent = new Intent(this, MainActivity.class);
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
             PendingIntent pi = PendingIntent.getActivity(this, 10001, intent,
                     PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
             AlarmManager am = (AlarmManager) getSystemService(ALARM_SERVICE);
             if (am != null) {
-                long trigger = SystemClock.elapsedRealtime() + 5000;
-                am.setRepeating(AlarmManager.ELAPSED_REALTIME_WAKEUP,
-                        trigger, 60000L, pi);
-                Log.i("YSPTV", "scheduleBootAlarm: alarm set every 60s");
+                long trigger = SystemClock.elapsedRealtime() + 3000;
+                am.set(AlarmManager.ELAPSED_REALTIME, trigger, pi);
+                Log.i("YSPTV", "scheduleBootAlarm: one-shot alarm set (not repeating)");
             }
         } catch (Throwable t) {
             Log.e("YSPTV", "scheduleBootAlarm failed", t);
