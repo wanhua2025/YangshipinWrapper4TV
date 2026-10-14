@@ -1065,6 +1065,7 @@ public class MainActivity extends Activity {
             try {
                 java.lang.reflect.Method m = playerView.getClass().getMethod("setSurfaceType", int.class);
                 m.invoke(playerView, 1);
+                Log.i(TAG, "exo_playerView setSurfaceType SURFACE_VIEW");
             } catch (Throwable ignored) {}
             try {
                 playerView.setLayerType(View.LAYER_TYPE_NONE, null);
@@ -1238,12 +1239,12 @@ public class MainActivity extends Activity {
                             com.google.android.exoplayer2.C.TRACK_TYPE_VIDEO, -1);
             trackSelector.setParameters(
                     trackSelector.buildUponParameters()
-                            .setMaxVideoSize(Integer.MAX_VALUE, Integer.MAX_VALUE)
+                            .setMaxVideoSize(1920, 1080)
                             .setForceLowestBitrate(false)
                             .setPreferredTextLanguage(null)
                             .setRendererDisabled(com.google.android.exoplayer2.C.TRACK_TYPE_TEXT, true)
                             .build());
-            Log.i(TAG, "exo_trackSelector_configured");
+            Log.i(TAG, "exo_trackSelector_configured_max1080p");
         } catch (Throwable t) {
             Log.d(TAG, "exo_trackSelector_config_failed: " + t.getMessage());
         }
@@ -1520,6 +1521,12 @@ public class MainActivity extends Activity {
             mIjkSurfaceView.setLayoutParams(new FrameLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT,
                     ViewGroup.LayoutParams.MATCH_PARENT));
+            if (Build.VERSION.SDK_INT >= 28) {
+                try {
+                    mIjkSurfaceView.setZOrderOnTop(true);
+                    Log.i(TAG, "ijk_surfaceView ZOrderOnTop set (Android9+)");
+                } catch (Throwable ignored) {}
+            }
         }
         if (mIjkSurfaceView.getParent() == null) {
             root.addView(mIjkSurfaceView, 0);
@@ -1668,10 +1675,9 @@ public class MainActivity extends Activity {
             Object[] renderers = (Object[]) renderersField.get(exoPlayer);
             if (renderers == null) return;
             Class<?> codecClass = Class.forName("android.media.MediaCodec");
-            java.lang.reflect.Field lowLatencyField = codecClass.getField("MEDIA_PERFORMANCE_MODE_LOW_LATENCY");
-            final int LOW_LATENCY = lowLatencyField.getInt(null);
-            java.lang.reflect.Field powerSavingField = codecClass.getField("MEDIA_PERFORMANCE_MODE_POWER_SAVING");
-            final int POWER_SAVING = powerSavingField.getInt(null);
+            final int HIGH_QUALITY = codecClass.getField("MEDIA_PERFORMANCE_MODE_HIGH_QUALITY").getInt(null);
+            final int LOW_LATENCY = codecClass.getField("MEDIA_PERFORMANCE_MODE_LOW_LATENCY").getInt(null);
+            final int POWER_SAVING = codecClass.getField("MEDIA_PERFORMANCE_MODE_POWER_SAVING").getInt(null);
             java.lang.reflect.Method setPerformanceMode = codecClass.getMethod("setPerformanceMode", int.class);
             for (Object renderer : renderers) {
                 if (renderer == null) continue;
@@ -1684,20 +1690,30 @@ public class MainActivity extends Activity {
                     getCodec.setAccessible(true);
                     Object codec = getCodec.invoke(renderer);
                     if (codec != null && codecClass.isInstance(codec)) {
+                        boolean ok = false;
                         try {
-                            setPerformanceMode.invoke(codec, LOW_LATENCY);
-                            Log.i(TAG, "exo_android9_mediacodec_low_latency_set on "
-                                    + (cn.contains("Video") ? "video" : "audio"));
-                        } catch (Throwable ignored) {
+                            setPerformanceMode.invoke(codec, HIGH_QUALITY);
+                            ok = true;
+                            Log.i(TAG, "exo_android9_mediacodec_HIGH_QUALITY on " + (cn.contains("Video") ? "video" : "audio"));
+                        } catch (Throwable ignored) {}
+                        if (!ok) {
+                            try {
+                                setPerformanceMode.invoke(codec, LOW_LATENCY);
+                                ok = true;
+                                Log.i(TAG, "exo_android9_mediacodec_LOW_LATENCY fallback");
+                            } catch (Throwable ignored2) {}
+                        }
+                        if (!ok) {
                             try {
                                 setPerformanceMode.invoke(codec, POWER_SAVING);
-                            } catch (Throwable ignored2) {}
+                                Log.i(TAG, "exo_android9_mediacodec_POWER_SAVING last");
+                            } catch (Throwable ignored3) {}
                         }
                     }
                 } catch (Throwable ignored) {}
             }
         } catch (Throwable t) {
-            Log.d(TAG, "exo_low_latency_reflect_failed: " + t.getMessage());
+            Log.d(TAG, "exo_mediacodec_perfmode_reflect_failed: " + t.getMessage());
         }
     }
 

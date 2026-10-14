@@ -6,8 +6,8 @@ import com.google.android.exoplayer2.upstream.LoadErrorHandlingPolicy;
 import java.io.IOException;
 
 public class HlsErrorHandlingPolicy extends DefaultLoadErrorHandlingPolicy {
-    private static final int MAX_RETRIES = 3;
-    private static final long RETRY_DELAY_MS = 500;
+    private static final int MAX_RETRIES = 4;
+    private static final long RETRY_DELAY_MS = 300;
 
     public HlsErrorHandlingPolicy() {
         super();
@@ -16,7 +16,8 @@ public class HlsErrorHandlingPolicy extends DefaultLoadErrorHandlingPolicy {
     @Override
     public long getRetryDelayMsFor(@NonNull LoadErrorHandlingPolicy.LoadErrorInfo loadErrorInfo) {
         if (isChunkError(loadErrorInfo)) {
-            return RETRY_DELAY_MS;
+            long delay = Math.min(3000, RETRY_DELAY_MS * (1 << Math.min(loadErrorInfo.errorCount - 1, 3)));
+            return delay;
         }
         return super.getRetryDelayMsFor(loadErrorInfo);
     }
